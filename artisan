@@ -1,0 +1,19 @@
+#!/usr/bin/env php
+<?php
+
+use Symfony\Component\Console\Input\ArgvInput;
+
+// See public/index.php for why this is silenced (PHP 8.5 vs Laravel 11's
+// bundled default config still referencing PDO::MYSQL_ATTR_SSL_CA).
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+define('LARAVEL_START', microtime(true));
+
+// Register the Composer autoloader...
+require __DIR__.'/vendor/autoload.php';
+
+// Bootstrap Laravel and handle the command...
+$status = (require_once __DIR__.'/bootstrap/app.php')
+    ->handleCommand(new ArgvInput);
+
+exit($status);
