@@ -96,4 +96,35 @@ class StudentObservationTest extends TestCase
         $response->assertOk()->assertJsonCount(1, 'data');
         $this->assertEquals('logro', $response->json('data.0.type'));
     }
+
+    public function test_listing_by_group_id_respects_privacy_and_teacher_access(): void
+    {
+        StudentObservation::create([
+            'student_id' => $this->student->id, 'group_id' => $this->group->id, 'registered_by' => $this->teacherA->id,
+            'date' => '2026-02-05', 'type' => 'logro', 'content' => 'Pública.', 'is_private' => false,
+        ]);
+        StudentObservation::create([
+            'student_id' => $this->student->id, 'group_id' => $this->group->id, 'registered_by' => $this->teacherA->id,
+            'date' => '2026-02-06', 'type' => 'seguimiento', 'content' => 'Privada de A.', 'is_private' => true,
+        ]);
+
+        $ownerView = $this->actingAs($this->teacherA, 'sanctum')->getJson("/api/observations?groupId={$this->group->id}");
+        $ownerView->assertOk()->assertJsonCount(2, 'data');
+
+        $otherTeacherView = $this->actingAs($this->teacherB, 'sanctum')->getJson("/api/observations?groupId={$this->group->id}");
+        $otherTeacherView->assertOk()->assertJsonCount(1, 'data');
+        $this->assertEquals('logro', $otherTeacherView->json('data.0.type'));
+    }
+
+    public function test_a_teacher_who_doesnt_teach_any_course_of_the_group_is_forbidden(): void
+    {
+        $outsider = User::factory()->create();
+        InstitutionTeacher::create([
+            'institution_id' => $this->institution->id, 'user_id' => $outsider->id, 'role' => 'teacher', 'status' => 'active',
+        ]);
+
+        $this->actingAs($outsider, 'sanctum')
+            ->getJson("/api/observations?groupId={$this->group->id}")
+            ->assertForbidden();
+    }
 }

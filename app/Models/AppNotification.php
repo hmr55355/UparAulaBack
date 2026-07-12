@@ -14,7 +14,7 @@ class AppNotification extends Model
 
     public $timestamps = false;
 
-    protected $fillable = ['user_id', 'type', 'title', 'body', 'data', 'priority', 'read_at'];
+    protected $fillable = ['user_id', 'dedupe_key', 'type', 'title', 'body', 'data', 'priority', 'read_at'];
 
     protected function casts(): array
     {

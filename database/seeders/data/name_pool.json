@@ -1,0 +1,34 @@
+{
+  "first_names_m": [
+    "Juan David", "Carlos Andrés", "Andrés Felipe", "Santiago", "Sebastián",
+    "Miguel Ángel", "Daniel", "Camilo", "Nicolás", "Alejandro",
+    "David", "Samuel", "Mateo", "Julián", "Kevin",
+    "Brayan", "Cristian", "Esteban", "Jerónimo", "Gabriel",
+    "Emmanuel", "Diego Armando", "Óscar", "Ricardo", "Fabián",
+    "Sergio", "Iván", "Tomás", "Simón", "Yeison",
+    "Wilmer", "Jhonatan", "Édison", "Deiby", "Yeferson",
+    "Anderson", "Duván", "Faiver", "Jorge Luis", "Luis Miguel"
+  ],
+  "first_names_f": [
+    "María Camila", "Laura Sofía", "Valentina", "Isabella", "Mariana",
+    "Gabriela", "Daniela", "Sara", "Salomé", "Antonella",
+    "Luciana", "Sofía", "Emily", "Natalia", "Alejandra",
+    "Juliana", "Paula Andrea", "Camila Andrea", "Yuliana", "Estefanía",
+    "Karen", "Melissa", "Manuela", "Ángela María", "Diana Carolina",
+    "Yesenia", "Leidy Johana", "Ingrid", "Tatiana", "Vanessa",
+    "Nicole", "Jimena", "Zharick", "Yuli Andrea", "Dayana",
+    "Katherine", "Lizeth", "Brigitte", "Wendy", "Shirley"
+  ],
+  "last_names": [
+    "García", "Rodríguez", "Martínez", "López", "González",
+    "Pérez", "Sánchez", "Ramírez", "Torres", "Flórez",
+    "Díaz", "Vargas", "Castro", "Ruiz", "Álvarez",
+    "Romero", "Suárez", "Rojas", "Moreno", "Muñoz",
+    "Jiménez", "Gutiérrez", "Ortiz", "Castillo", "Guerrero",
+    "Mendoza", "Herrera", "Medina", "Cortés", "Aguilar",
+    "Peña", "Reyes", "Fernández", "Contreras", "Cárdenas",
+    "Ospina", "Zapata", "Cuello", "Maestre", "Iguarán",
+    "Fonseca", "Pacheco", "Daza", "Quintero", "Bermúdez",
+    "Acosta", "Salcedo", "Barros", "Núñez", "Escobar"
+  ]
+}

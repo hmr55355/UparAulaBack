@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Group;
 use App\Models\Student;
 use App\Models\StudentObservation;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class StudentObservationController extends Controller
@@ -12,14 +14,22 @@ class StudentObservationController extends Controller
     public function index(Request $request)
     {
         $request->validate([
-            'studentId' => ['required', 'integer', 'exists:students,id'],
+            'studentId' => ['required_without:groupId', 'integer', 'exists:students,id'],
+            'groupId' => ['required_without:studentId', 'integer', 'exists:groups,id'],
             'periodId' => ['sometimes', 'integer'],
         ]);
 
-        $student = Student::findOrFail($request->studentId);
-        abort_unless($student->canBeAccessedBy($request->user()), 403);
+        if ($request->studentId) {
+            $student = Student::findOrFail($request->studentId);
+            abort_unless($student->canBeAccessedBy($request->user()), 403);
+            $query = StudentObservation::where('student_id', $student->id);
+        } else {
+            $group = Group::findOrFail($request->groupId);
+            $this->authorizeGroupAccess($request->user(), $group);
+            $query = StudentObservation::where('group_id', $group->id)->with('student:id,first_name,last_name');
+        }
 
-        $observations = StudentObservation::where('student_id', $student->id)
+        $observations = $query
             ->when($request->periodId, fn ($q, $periodId) => $q->where('period_id', $periodId))
             ->where(function ($q) use ($request) {
                 // Nota del prompt: is_private=true solo es visible para quien la registró.
@@ -95,5 +105,15 @@ class StudentObservationController extends Controller
         $array['teacher_name'] = $teacherName;
 
         return $array;
+    }
+
+    /**
+     * Mismo gate que BehaviorAnnotationController::authorizeGroupAccess() —
+     * quien dicta algún curso activo del grupo, o el admin de la institución.
+     */
+    private function authorizeGroupAccess(User $user, Group $group): void
+    {
+        $teachesGroup = $group->groupSubjects()->where('user_id', $user->id)->where('is_active', true)->exists();
+        abort_unless($teachesGroup || $user->isAdminOf($group->institution_id), 403);
     }
 }

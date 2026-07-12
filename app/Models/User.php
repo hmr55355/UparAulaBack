@@ -26,6 +26,7 @@ class User extends Authenticatable
         'password',
         'avatar',
         'phone',
+        'notification_preferences',
     ];
 
     public function institutionTeachers(): HasMany
@@ -52,6 +53,15 @@ class User extends Authenticatable
     }
 
     /**
+     * Preferencias por tipo por defecto encendidas: null explícito o ausencia
+     * de la clave significan "activado" (módulo 18 — Notificaciones).
+     */
+    public function wantsNotification(string $type): bool
+    {
+        return ($this->notification_preferences[$type] ?? true) !== false;
+    }
+
+    /**
      * The attributes that should be hidden for serialization.
      *
      * @var list<string>
@@ -71,6 +81,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'notification_preferences' => 'array',
         ];
     }
 }

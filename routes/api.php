@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\BehaviorAnnotationController;
 use App\Http\Controllers\Api\ClassPlanController;
 use App\Http\Controllers\Api\ClassScheduleController;
 use App\Http\Controllers\Api\CopyChargeController;
+use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\GradeColumnController;
 use App\Http\Controllers\Api\GradeController;
 use App\Http\Controllers\Api\GradeSectionController;
@@ -15,10 +16,14 @@ use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\GroupSubjectController;
 use App\Http\Controllers\Api\HomeworkController;
 use App\Http\Controllers\Api\InstitutionController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ParentCitationController;
 use App\Http\Controllers\Api\ParentController;
 use App\Http\Controllers\Api\PeriodController;
+use App\Http\Controllers\Api\PushSubscriptionController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\StudentController;
+use App\Http\Controllers\Api\StudentImportController;
 use App\Http\Controllers\Api\StudentObservationController;
 use App\Http\Controllers\Api\SubjectController;
 use App\Http\Controllers\Api\VoiceNoteController;
@@ -37,7 +42,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::delete('/me', [AuthController::class, 'destroy']);
         Route::put('/profile', [AuthController::class, 'updateProfile']);
+        Route::patch('/notification-preferences', [AuthController::class, 'updateNotificationPreferences']);
     });
 
     Route::prefix('institutions')->group(function () {
@@ -47,6 +54,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/join', [InstitutionController::class, 'join']);
         Route::post('/accept-invitation', [InstitutionController::class, 'acceptInvitation']);
         Route::put('/{institution}', [InstitutionController::class, 'update']);
+        Route::get('/{institution}/logo', [InstitutionController::class, 'logo']);
         Route::get('/{institution}/teachers', [InstitutionController::class, 'teachers']);
         Route::post('/{institution}/teachers/invite', [InstitutionController::class, 'inviteTeacher']);
         Route::patch('/{institution}/teachers/{userId}/role', [InstitutionController::class, 'updateTeacherRole']);
@@ -176,4 +184,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/copy-charges/{copyCharge}', [CopyChargeController::class, 'destroy']);
     Route::get('/copy-charges/{copyCharge}/payments', [CopyChargeController::class, 'payments']);
     Route::post('/copy-charges/{copyCharge}/payments/bulk', [CopyChargeController::class, 'bulkPayments']);
+    Route::post('/copy-charges/summary', [CopyChargeController::class, 'summary']);
+
+    Route::post('/reports/grade-sheet', [ReportController::class, 'gradeSheet']);
+    Route::post('/reports/student-bulletin', [ReportController::class, 'studentBulletin']);
+    Route::post('/reports/attendance-sheet', [ReportController::class, 'attendanceSheet']);
+    Route::post('/reports/behavior-citations', [ReportController::class, 'behaviorCitations']);
+    Route::post('/reports/academic-risk', [ReportController::class, 'academicRisk']);
+    Route::get('/reports/{report}', [ReportController::class, 'show']);
+    Route::get('/reports/{report}/download', [ReportController::class, 'download']);
+
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+
+    Route::get('/push/vapid-public-key', [PushSubscriptionController::class, 'vapidPublicKey']);
+    Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store']);
+    Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy']);
+
+    Route::post('/students/import', [StudentImportController::class, 'store']);
+    Route::get('/academic-years/{academicYear}/export', [ExportController::class, 'yearData']);
 });

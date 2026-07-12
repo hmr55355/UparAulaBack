@@ -3,8 +3,11 @@
 namespace Database\Seeders;
 
 use App\Models\AcademicYear;
+use App\Models\AttendanceRecord;
 use App\Models\ClassPlan;
 use App\Models\ClassSchedule;
+use App\Models\Grade;
+use App\Models\GradeSection;
 use App\Models\GradeTemplate;
 use App\Models\Group;
 use App\Models\GroupSubject;
@@ -17,22 +20,42 @@ use App\Models\Subject;
 use App\Models\User;
 use App\Services\GradeCalculatorService;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * Seeds one fully working demo tenant so a teacher can log in and immediately
- * see a real, populated planilla instead of an empty app. Mirrors the demo
- * data described in "NOTAS FINALES PARA EL AGENTE" #19 and #34.
+ * Seeds one fully working demo tenant matching el horario real del docente
+ * (imagen aSc Timetables compartida por el usuario): 7 grupos, 3 materias, 8
+ * group_subjects, 19 bloques de horario/semana, ~30 estudiantes por grupo, y
+ * asistencia/notas históricas para los días de esta semana que ya pasaron —
+ * para que un docente pueda probar la app contra una semana realista completa
+ * en vez de una app vacía. Mirrors "NOTAS FINALES PARA EL AGENTE" #19 y #34.
  */
 class DemoDataSeeder extends Seeder
 {
+    private array $namePool;
+
+    private int $nextDocument = 1000000;
+
     public function run(): void
     {
+        $this->namePool = json_decode(
+            file_get_contents(__DIR__.'/data/name_pool.json'),
+            true
+        );
+
         $teacher = User::create([
             'name' => 'Hernis Mercado',
             'email' => 'hernis@uparaula.com',
             'password' => Hash::make('password'),
             'phone' => '3001234567',
+        ]);
+
+        $secondTeacher = User::create([
+            'name' => 'Laura Gómez',
+            'email' => 'segundo.docente@uparaula.com',
+            'password' => Hash::make('password'),
+            'phone' => '3007654321',
         ]);
 
         $institution = Institution::create([
@@ -53,6 +76,16 @@ class DemoDataSeeder extends Seeder
             'accepted_at' => now(),
         ]);
 
+        // Segundo docente: solo miembro activo de la institución, sin horario
+        // propio — se usa para probar reglas de autorización entre docentes.
+        InstitutionTeacher::create([
+            'institution_id' => $institution->id,
+            'user_id' => $secondTeacher->id,
+            'role' => 'teacher',
+            'status' => 'active',
+            'accepted_at' => now(),
+        ]);
+
         $academicYear = AcademicYear::create([
             'institution_id' => $institution->id,
             'year' => 2026,
@@ -62,11 +95,18 @@ class DemoDataSeeder extends Seeder
         ]);
 
         $periodRanges = [
-            [1, 'Primer Período', '2026-01-20', '2026-03-20', true],
-            [2, 'Segundo Período', '2026-03-23', '2026-05-29', false],
-            [3, 'Tercer Período', '2026-06-01', '2026-08-07', false],
-            [4, 'Cuarto Período', '2026-08-10', '2026-11-28', false],
+            [1, 'Primer Período', '2026-01-20', '2026-03-20'],
+            [2, 'Segundo Período', '2026-03-23', '2026-05-29'],
+            [3, 'Tercer Período', '2026-06-01', '2026-08-07'],
+            [4, 'Cuarto Período', '2026-08-10', '2026-11-28'],
         ];
+
+        // El período "activo" es el que realmente contiene la fecha de hoy
+        // (no siempre el Primer Período) — de lo contrario la asistencia
+        // histórica sembrada con fechas reales de "esta semana" cae fuera del
+        // rango del período activo y las columnas from_attendance nunca la ven.
+        $today = Carbon::now()->toDateString();
+        $activePeriodNumber = collect($periodRanges)->first(fn ($p) => $today >= $p[2] && $today <= $p[3])[0] ?? 1;
 
         $periods = collect($periodRanges)->map(fn ($p) => Period::create([
             'academic_year_id' => $academicYear->id,
@@ -74,70 +114,215 @@ class DemoDataSeeder extends Seeder
             'name' => $p[1],
             'start_date' => $p[2],
             'end_date' => $p[3],
-            'is_active' => $p[4],
+            'is_active' => $p[0] === $activePeriodNumber,
         ]));
-        $periodUno = $periods->first();
+        $activePeriod = $periods->firstWhere('number', $activePeriodNumber);
 
-        $groupA = Group::create([
-            'institution_id' => $institution->id,
-            'academic_year_id' => $academicYear->id,
-            'name' => '10-2MMGC',
-            'grade_level' => '10',
-            'section' => '2MMGC',
-        ]);
-
-        $groupB = Group::create([
-            'institution_id' => $institution->id,
-            'academic_year_id' => $academicYear->id,
-            'name' => '11-1',
-            'grade_level' => '11',
-            'section' => '1',
-        ]);
-
-        $matematicas = Subject::create([
-            'institution_id' => $institution->id,
-            'name' => 'Matemáticas',
-            'color' => '#1565C0',
-        ]);
-
-        $trigonometria = Subject::create([
-            'institution_id' => $institution->id,
-            'name' => 'Trigonometría',
-            'color' => '#1976D2',
-        ]);
-
-        $groupSubjectA = GroupSubject::create([
-            'group_id' => $groupA->id,
-            'subject_id' => $matematicas->id,
-            'user_id' => $teacher->id,
-            'institution_id' => $institution->id,
-            'academic_year_id' => $academicYear->id,
-        ]);
-
-        $groupSubjectB = GroupSubject::create([
-            'group_id' => $groupB->id,
-            'subject_id' => $trigonometria->id,
-            'user_id' => $teacher->id,
-            'institution_id' => $institution->id,
-            'academic_year_id' => $academicYear->id,
-        ]);
-
-        $studentsData = [
-            ['García Pérez', 'Juan David', 'M', $groupA],
-            ['Martínez Rojas', 'Carlos Andrés', 'M', $groupA],
-            ['Pérez Torres', 'María Camila', 'F', $groupA],
-            ['Torres López', 'Laura Sofía', 'F', $groupB],
-            ['Gutiérrez Díaz', 'Andrés Felipe', 'M', $groupB],
+        // --- Grupos (7, calcados del horario real) ---
+        $groupSpecs = [
+            '1101' => ['grade' => '11', 'section' => '1'],
+            '1102' => ['grade' => '11', 'section' => '2'],
+            '1103' => ['grade' => '11', 'section' => '3'],
+            '1001' => ['grade' => '10', 'section' => '1'],
+            '1002' => ['grade' => '10', 'section' => '2'],
+            '1003' => ['grade' => '10', 'section' => '3'],
+            '1004' => ['grade' => '10', 'section' => '4'],
         ];
 
-        foreach ($studentsData as $i => [$lastName, $firstName, $gender, $group]) {
+        /** @var array<string, Group> $groups */
+        $groups = [];
+        foreach ($groupSpecs as $name => $meta) {
+            $groups[$name] = Group::create([
+                'institution_id' => $institution->id,
+                'academic_year_id' => $academicYear->id,
+                'name' => $name,
+                'grade_level' => $meta['grade'],
+                'section' => $meta['section'],
+            ]);
+        }
+
+        // --- Materias (3) ---
+        $calculo = Subject::create(['institution_id' => $institution->id, 'name' => 'Cálculo', 'color' => '#1565C0']);
+        $trigonometria = Subject::create(['institution_id' => $institution->id, 'name' => 'Trigonometría', 'color' => '#1976D2']);
+        $estadistica = Subject::create(['institution_id' => $institution->id, 'name' => 'Estadística', 'color' => '#2E7D32']);
+
+        // --- Group-subjects (8), todos dictados por Hernis ---
+        $groupSubjectSpecs = [
+            ['1101', $calculo], ['1102', $calculo], ['1103', $calculo],
+            ['1001', $trigonometria], ['1002', $trigonometria], ['1003', $trigonometria], ['1004', $trigonometria],
+            ['1003', $estadistica],
+        ];
+
+        /** @var array<string, GroupSubject> $groupSubjects keyed by "grupo:materia" */
+        $groupSubjects = [];
+        foreach ($groupSubjectSpecs as [$groupName, $subject]) {
+            $key = "{$groupName}:{$subject->name}";
+            $groupSubjects[$key] = GroupSubject::create([
+                'group_id' => $groups[$groupName]->id,
+                'subject_id' => $subject->id,
+                'user_id' => $teacher->id,
+                'institution_id' => $institution->id,
+                'academic_year_id' => $academicYear->id,
+            ]);
+        }
+
+        // --- ~30 estudiantes por grupo ---
+        /** @var array<string, Student[]> $studentsByGroup */
+        $studentsByGroup = [];
+        foreach ($groups as $name => $group) {
+            $studentsByGroup[$name] = $this->seedStudentsForGroup($institution, $academicYear, $group, 30);
+        }
+
+        // --- Plantilla de calificaciones, aplicada a los 8 group_subjects ---
+        $sectionsConfig = $this->gradeSectionsConfig();
+        $template = GradeTemplate::create([
+            'user_id' => $teacher->id,
+            'institution_id' => $institution->id,
+            'name' => 'Plantilla estándar 2026',
+            'description' => 'Aptitud, Tareas, Actividades y Evaluaciones — Período 1.',
+            'is_shared' => true,
+            'sections_config' => $sectionsConfig,
+        ]);
+
+        $calculator = app(GradeCalculatorService::class);
+        foreach ($groupSubjects as $groupSubject) {
+            $calculator->applyTemplate($template, $groupSubject, $activePeriod);
+        }
+
+        // --- Horario real (19 bloques/semana) ---
+        // [día ISO (1=lun), hora inicio, hora fin, salón, grupo, materia]
+        $scheduleRows = [
+            [1, '06:15:00', '07:10:00', 'HC.1101', '1101', 'Cálculo'],
+            [1, '07:10:00', '08:05:00', 'HC.1101', '1101', 'Cálculo'],
+            [1, '08:05:00', '09:00:00', 'HC.1003', '1003', 'Trigonometría'],
+            [1, '09:30:00', '10:25:00', 'HC.1003', '1003', 'Trigonometría'],
+            [1, '10:25:00', '11:20:00', 'HC.1102', '1102', 'Cálculo'],
+            [1, '11:20:00', '12:15:00', 'HC.1102', '1102', 'Cálculo'],
+
+            [2, '07:10:00', '08:05:00', 'HC.1002', '1002', 'Trigonometría'],
+            [2, '09:30:00', '10:25:00', 'HC.1003', '1003', 'Estadística'],
+            [2, '10:25:00', '11:20:00', 'HC.1102', '1102', 'Cálculo'],
+            [2, '11:20:00', '12:15:00', 'HC.1101', '1101', 'Cálculo'],
+
+            [3, '07:10:00', '08:05:00', 'HC.1001', '1001', 'Trigonometría'],
+            [3, '08:05:00', '09:00:00', 'HC.1004', '1004', 'Trigonometría'],
+            [3, '09:30:00', '10:25:00', 'HC.1004', '1004', 'Trigonometría'],
+            [3, '11:20:00', '12:15:00', 'HC.1103', '1103', 'Cálculo'],
+
+            [4, '08:05:00', '09:00:00', 'HC.1001', '1001', 'Trigonometría'],
+            [4, '09:30:00', '10:25:00', 'HC.1002', '1002', 'Trigonometría'],
+
+            [5, '07:10:00', '08:05:00', 'HC.1103', '1103', 'Cálculo'],
+            [5, '08:05:00', '09:00:00', 'HC.1004', '1004', 'Trigonometría'],
+            [5, '11:20:00', '12:15:00', 'HC.1003', '1003', 'Trigonometría'],
+        ];
+
+        foreach ($scheduleRows as [$day, $start, $end, $classroom, $groupName, $subjectName]) {
+            ClassSchedule::create([
+                'group_subject_id' => $groupSubjects["{$groupName}:{$subjectName}"]->id,
+                'user_id' => $teacher->id,
+                'day_of_week' => $day,
+                'start_time' => $start,
+                'end_time' => $end,
+                'classroom' => $classroom,
+                'academic_year_id' => $academicYear->id,
+            ]);
+        }
+
+        // --- Asistencia histórica: días de esta semana que ya pasaron (no incluye hoy) ---
+        $todayWeekday = min(Carbon::now()->isoWeekday(), 6);
+        $monday = Carbon::now()->startOfWeek(Carbon::MONDAY);
+
+        // Una sola sesión por (día, group_subject) — un bloque doble como el
+        // lunes 1101 (períodos 1 y 2) es UNA sola asistencia, no dos.
+        $sessions = collect($scheduleRows)
+            ->filter(fn ($row) => $row[0] < $todayWeekday)
+            ->unique(fn ($row) => $row[0].':'.$row[4].':'.$row[5]);
+
+        foreach ($sessions as [$day, , , , $groupName, $subjectName]) {
+            $groupSubject = $groupSubjects["{$groupName}:{$subjectName}"];
+            $date = $monday->copy()->addDays($day - 1)->toDateString();
+
+            foreach ($studentsByGroup[$groupName] as $student) {
+                AttendanceRecord::withoutEvents(fn () => AttendanceRecord::create([
+                    'student_id' => $student->id,
+                    'group_subject_id' => $groupSubject->id,
+                    'date' => $date,
+                    'status' => $this->randomAttendanceStatus(),
+                    'registered_by' => $teacher->id,
+                ]));
+            }
+        }
+
+        // --- Notas históricas: calificaciones manuales para el período activo ---
+        foreach ($groupSubjects as $key => $groupSubject) {
+            $groupName = explode(':', $key)[0];
+            $manualColumns = GradeSection::where('group_subject_id', $groupSubject->id)
+                ->where('period_id', $activePeriod->id)
+                ->with('columns')
+                ->get()
+                ->flatMap->columns
+                ->where('column_type', 'manual');
+
+            foreach ($studentsByGroup[$groupName] as $student) {
+                foreach ($manualColumns as $column) {
+                    Grade::withoutEvents(fn () => Grade::create([
+                        'student_id' => $student->id,
+                        'grade_column_id' => $column->id,
+                        'group_subject_id' => $groupSubject->id,
+                        'period_id' => $activePeriod->id,
+                        'score' => $this->randomScore(),
+                        'registered_by' => $teacher->id,
+                    ]));
+                }
+            }
+        }
+
+        // --- Barrido final: asistencia + notas manuales -> columnas calculadas, finales de sección y definitiva ---
+        foreach ($groupSubjects as $key => $groupSubject) {
+            $groupName = explode(':', $key)[0];
+            foreach ($studentsByGroup[$groupName] as $student) {
+                $calculator->recalculateForStudent($student->id, $groupSubject->id, $activePeriod->id);
+            }
+        }
+
+        ClassPlan::create([
+            'group_subject_id' => $groupSubjects['1101:Cálculo']->id,
+            'period_id' => $activePeriod->id,
+            'registered_by' => $teacher->id,
+            'date' => '2026-02-20',
+            'topic' => 'Límites y continuidad',
+            'objectives' => 'Reconocer el concepto de límite de una función en un punto.',
+            'activities' => 'Explicación en tablero + ejercicios guiados página 82.',
+            'what_was_done' => 'Se explicó la teoría y se resolvieron los ejercicios 1 al 10 de la página 82.',
+            'pending_for_next_class' => 'Repasar ejercicios de la página 82 que quedaron incompletos.',
+            'attendance_note' => '28 de 30 estudiantes',
+            'status' => 'ejecutada',
+        ]);
+    }
+
+    /**
+     * @return Student[]
+     */
+    private function seedStudentsForGroup(Institution $institution, AcademicYear $academicYear, Group $group, int $count): array
+    {
+        $maleNames = $this->namePool['first_names_m'];
+        $femaleNames = $this->namePool['first_names_f'];
+        $lastNames = $this->namePool['last_names'];
+
+        $students = [];
+        for ($i = 0; $i < $count; $i++) {
+            $isMale = mt_rand(0, 1) === 0;
+            $firstName = $isMale ? $maleNames[array_rand($maleNames)] : $femaleNames[array_rand($femaleNames)];
+            $lastName = $lastNames[array_rand($lastNames)].' '.$lastNames[array_rand($lastNames)];
+
             $student = Student::create([
                 'institution_id' => $institution->id,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'document_type' => 'TI',
-                'document_number' => (string) (1000000 + $i),
-                'gender' => $gender === 'M' ? 'masculino' : 'femenino',
+                'document_number' => (string) ($this->nextDocument++),
+                'gender' => $isMale ? 'masculino' : 'femenino',
                 'is_active' => true,
             ]);
 
@@ -149,10 +334,40 @@ class DemoDataSeeder extends Seeder
                 'status' => 'activo',
             ]);
 
-            $group->increment('student_count');
+            $students[] = $student;
         }
 
-        $sectionsConfig = [
+        $group->update(['student_count' => $count]);
+
+        return $students;
+    }
+
+    private function randomAttendanceStatus(): string
+    {
+        $roll = mt_rand(1, 100);
+
+        return match (true) {
+            $roll <= 80 => 'presente',
+            $roll <= 90 => 'ausente_injustificado',
+            $roll <= 95 => 'tarde',
+            default => 'ausente_justificado',
+        };
+    }
+
+    private function randomScore(): float
+    {
+        $roll = mt_rand(1, 100);
+
+        return match (true) {
+            $roll <= 10 => round(mt_rand(20, 55) / 10, 1),
+            $roll <= 30 => round(mt_rand(56, 69) / 10, 1),
+            default => round(mt_rand(70, 100) / 10, 1),
+        };
+    }
+
+    private function gradeSectionsConfig(): array
+    {
+        return [
             'sections' => [
                 [
                     'name' => 'Aptitud', 'short_name' => 'Aptitud', 'weight' => 30, 'color' => '#1565C0',
@@ -191,57 +406,5 @@ class DemoDataSeeder extends Seeder
                 ],
             ],
         ];
-
-        $template = GradeTemplate::create([
-            'user_id' => $teacher->id,
-            'institution_id' => $institution->id,
-            'name' => 'Plantilla Matemáticas 2026',
-            'description' => 'Aptitud, Tareas, Actividades y Evaluaciones — Período 1.',
-            'is_shared' => true,
-            'sections_config' => $sectionsConfig,
-        ]);
-
-        app(GradeCalculatorService::class)->applyTemplate($template, $groupSubjectA, $periodUno);
-
-        // Horario de ejemplo: Lunes/Miércoles/Viernes Matemáticas 10-2MMGC, Martes/Jueves Trigonometría 11-1.
-        foreach ([1, 3, 5] as $day) {
-            ClassSchedule::create([
-                'group_subject_id' => $groupSubjectA->id,
-                'user_id' => $teacher->id,
-                'day_of_week' => $day,
-                'start_time' => '07:00:00',
-                'end_time' => '07:50:00',
-                'classroom' => 'Salón 10-2',
-                'block_label' => '1ra hora',
-                'academic_year_id' => $academicYear->id,
-            ]);
-        }
-
-        foreach ([2, 4] as $day) {
-            ClassSchedule::create([
-                'group_subject_id' => $groupSubjectB->id,
-                'user_id' => $teacher->id,
-                'day_of_week' => $day,
-                'start_time' => '08:00:00',
-                'end_time' => '08:50:00',
-                'classroom' => 'Salón 11-1',
-                'block_label' => '2da hora',
-                'academic_year_id' => $academicYear->id,
-            ]);
-        }
-
-        ClassPlan::create([
-            'group_subject_id' => $groupSubjectA->id,
-            'period_id' => $periodUno->id,
-            'registered_by' => $teacher->id,
-            'date' => '2026-02-20',
-            'topic' => 'Ángulos de referencia',
-            'objectives' => 'Reconocer ángulos de referencia en los cuatro cuadrantes.',
-            'activities' => 'Explicación en tablero + ejercicios guiados página 82.',
-            'what_was_done' => 'Se explicó la teoría y se resolvieron los ejercicios 1 al 10 de la página 82.',
-            'pending_for_next_class' => 'Repasar ejercicios de la página 82 que quedaron incompletos.',
-            'attendance_note' => '28 de 32 estudiantes',
-            'status' => 'ejecutada',
-        ]);
     }
 }

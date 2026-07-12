@@ -15,6 +15,7 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'avatar' => $this->avatar,
             'phone' => $this->phone,
+            'notification_preferences' => $this->notification_preferences,
             'institutions' => InstitutionMembershipResource::collection($this->whenLoaded('institutionTeachers')),
             'created_at' => $this->created_at,
         ];

@@ -79,6 +79,29 @@ class AuthController extends Controller
         return new UserResource($user);
     }
 
+    public function updateNotificationPreferences(Request $request)
+    {
+        $validated = $request->validate(['preferences' => ['required', 'array']]);
+
+        $user = $request->user();
+        $user->update(['notification_preferences' => $validated['preferences']]);
+
+        return new UserResource($user);
+    }
+
+    /**
+     * Zona peligrosa (módulo 18): soft-delete de la propia cuenta (User ya usa
+     * SoftDeletes) + revoca todos los tokens Sanctum.
+     */
+    public function destroy(Request $request)
+    {
+        $user = $request->user();
+        $user->tokens()->delete();
+        $user->delete();
+
+        return response()->json(['message' => 'Cuenta eliminada.']);
+    }
+
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => ['required', 'email']]);

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateReportJob;
 use App\Models\CopyCharge;
 use App\Models\Group;
+use App\Models\Report;
 use App\Models\Student;
 use App\Models\StudentCopyPayment;
 use Illuminate\Http\Request;
@@ -179,5 +181,36 @@ class CopyChargeController extends Controller
         ]);
 
         return response()->json(['data' => $payment->fresh()]);
+    }
+
+    /**
+     * Resumen general de copias (`/copies/summary` del spec): dispara el mismo
+     * flujo en cola de ReportController — el reporte cruzado de cobros del
+     * grupo/período vive conceptualmente aquí, no en el controller de reportes.
+     */
+    public function summary(Request $request)
+    {
+        $validated = $request->validate([
+            'group_id' => ['required', 'integer', 'exists:groups,id'],
+            'period_id' => ['nullable', 'integer', 'exists:periods,id'],
+        ]);
+
+        $group = Group::findOrFail($validated['group_id']);
+        $this->authorize('view', $group->institution);
+
+        $validated['format'] = 'excel';
+
+        $report = Report::create([
+            'user_id' => $request->user()->id,
+            'institution_id' => $group->institution_id,
+            'type' => 'copies_summary',
+            'format' => 'excel',
+            'params' => $validated,
+            'status' => 'pending',
+        ]);
+
+        GenerateReportJob::dispatch($report->id);
+
+        return response()->json(['data' => ['id' => $report->id]], 202);
     }
 }

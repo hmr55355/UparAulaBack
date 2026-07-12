@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class InstitutionController extends Controller
@@ -97,11 +98,31 @@ class InstitutionController extends Controller
             'rector' => ['nullable', 'string', 'max:255'],
             'grading_scale' => ['sometimes', 'in:1_to_10,1_to_5'],
             'min_passing_grade' => ['sometimes', 'numeric', 'min:1', 'max:10'],
+            'logo' => ['sometimes', 'file', 'image', 'max:2048'],
         ]);
+
+        if ($request->hasFile('logo')) {
+            if ($institution->logo) {
+                Storage::disk('local')->delete($institution->logo);
+            }
+            $validated['logo'] = $request->file('logo')->store("private/institutions/{$institution->id}", 'local');
+        }
 
         $institution->update($validated);
 
         return new InstitutionResource($institution);
+    }
+
+    /**
+     * Sirve el logo institucional (disco privado, mismo patrón que
+     * VoiceNoteController::show) — cualquier miembro activo puede verlo.
+     */
+    public function logo(Request $request, Institution $institution)
+    {
+        abort_unless($request->user()->isActiveMemberOf($institution->id), 403);
+        abort_if(! $institution->logo, 404);
+
+        return Storage::disk('local')->response($institution->logo);
     }
 
     public function teachers(Institution $institution)
