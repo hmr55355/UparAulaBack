@@ -35,14 +35,18 @@ class AcademicRiskReportService
             ->sortBy(fn (PeriodFinal $pf) => $pf->student->last_name)
             ->values();
 
-        $rows = $atRisk->map(function (PeriodFinal $pf) use ($period, $minPassing) {
-            $failingColumns = Grade::where('student_id', $pf->student_id)
-                ->where('group_subject_id', $pf->group_subject_id)
-                ->where('period_id', $period->id)
-                ->whereNotNull('score')
-                ->where('score', '<', $minPassing)
-                ->with('gradeColumn')
-                ->get()
+        // Una sola consulta para todas las notas reprobadas de todos los estudiantes
+        // en riesgo, en vez de una consulta por estudiante dentro del map() de abajo.
+        $failingGradesByStudentAndCourse = Grade::whereIn('group_subject_id', $groupSubjectIds)
+            ->where('period_id', $period->id)
+            ->whereNotNull('score')
+            ->where('score', '<', $minPassing)
+            ->with('gradeColumn')
+            ->get()
+            ->groupBy(fn (Grade $g) => "{$g->student_id}:{$g->group_subject_id}");
+
+        $rows = $atRisk->map(function (PeriodFinal $pf) use ($failingGradesByStudentAndCourse, $minPassing) {
+            $failingColumns = ($failingGradesByStudentAndCourse->get("{$pf->student_id}:{$pf->group_subject_id}") ?? collect())
                 ->map(fn (Grade $g) => $g->gradeColumn->short_name ?: $g->gradeColumn->name)
                 ->implode(', ');
 

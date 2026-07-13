@@ -26,6 +26,11 @@ class GradeCalculatorService
     public function recalculateForStudent(int $studentId, int $groupSubjectId, int $periodId): void
     {
         DB::transaction(function () use ($studentId, $groupSubjectId, $periodId) {
+            // Cargado una sola vez y reutilizado: evita que upsertGrade() (por columna) y
+            // recalculatePeriodFinal() re-consulten el mismo GroupSubject/institution por
+            // separado — antes eran N+2 queries redundantes por cada llamada a este método.
+            $groupSubject = GroupSubject::with('institution')->find($groupSubjectId);
+
             $sections = GradeSection::query()
                 ->where('group_subject_id', $groupSubjectId)
                 ->where('period_id', $periodId)
@@ -36,6 +41,9 @@ class GradeCalculatorService
 
             foreach ($sections as $section) {
                 foreach ($section->columns as $column) {
+                    if ($groupSubject) {
+                        $column->setRelation('groupSubject', $groupSubject);
+                    }
                     if ($column->column_type === 'from_attendance') {
                         $this->calculateAttendanceColumn($studentId, $column);
                     }
@@ -56,7 +64,7 @@ class GradeCalculatorService
                 $this->recalculateSectionFinal($studentId, $section->id);
             }
 
-            $this->recalculatePeriodFinal($studentId, $groupSubjectId, $periodId);
+            $this->recalculatePeriodFinal($studentId, $groupSubjectId, $periodId, $groupSubject);
         });
     }
 
@@ -151,9 +159,11 @@ class GradeCalculatorService
             ->get()
             ->keyBy('grade_column_id');
 
-        $scored = $section->columns->filter(
-            fn ($column) => $grades->get($column->id)?->score !== null
-        );
+        $scored = $section->columns->filter(function ($column) use ($grades) {
+            $grade = $grades->get($column->id);
+
+            return $grade?->score !== null && ! $grade->is_excused;
+        });
 
         $sectionFinal = null;
 
@@ -190,7 +200,7 @@ class GradeCalculatorService
      * Paso 4 — period_final (Def Total): suma ponderada de las section_finals
      * activas no nulas, ajustando pesos proporcionalmente si falta alguna.
      */
-    public function recalculatePeriodFinal(int $studentId, int $groupSubjectId, int $periodId): ?PeriodFinal
+    public function recalculatePeriodFinal(int $studentId, int $groupSubjectId, int $periodId, ?GroupSubject $groupSubject = null): ?PeriodFinal
     {
         $sections = GradeSection::where('group_subject_id', $groupSubjectId)
             ->where('period_id', $periodId)
@@ -217,8 +227,8 @@ class GradeCalculatorService
             }
         }
 
-        $institution = optional(optional(\App\Models\GroupSubject::find($groupSubjectId))->institution);
-        $minPassing = $institution->min_passing_grade ?? 6.0;
+        $groupSubject ??= GroupSubject::with('institution')->find($groupSubjectId);
+        $minPassing = optional($groupSubject?->institution)->min_passing_grade ?? 6.0;
 
         return PeriodFinal::updateOrCreate(
             ['student_id' => $studentId, 'group_subject_id' => $groupSubjectId, 'period_id' => $periodId],

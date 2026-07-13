@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Institution\AssignCourseRequest;
+use App\Http\Requests\Institution\CreateTeacherRequest;
 use App\Http\Requests\Institution\InviteTeacherRequest;
 use App\Http\Requests\Institution\StoreInstitutionRequest;
 use App\Http\Resources\InstitutionResource;
@@ -17,6 +18,7 @@ use App\Models\Period;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -129,9 +131,40 @@ class InstitutionController extends Controller
     {
         $this->authorize('manageTeachers', $institution);
 
-        $teachers = $institution->teachers()->with('user')->get();
+        $teachers = $institution->teachers()->with('user')->orderBy('id')->paginate(50);
 
         return TeacherResource::collection($teachers);
+    }
+
+    /**
+     * Crea la cuenta del docente directamente (a diferencia de inviteTeacher,
+     * que exige que el usuario ya exista) y lo deja activo de inmediato —
+     * el admin ya está vouching por la cuenta, no hace falta que nadie la
+     * acepte.
+     */
+    public function createTeacher(CreateTeacherRequest $request, Institution $institution)
+    {
+        $this->authorize('manageTeachers', $institution);
+
+        $membership = DB::transaction(function () use ($request, $institution) {
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+            ]);
+
+            return InstitutionTeacher::create([
+                'institution_id' => $institution->id,
+                'user_id' => $user->id,
+                'role' => $request->input('role', 'teacher'),
+                'status' => 'active',
+                'invited_by' => $request->user()->id,
+                'invited_at' => now(),
+                'accepted_at' => now(),
+            ]);
+        });
+
+        return new TeacherResource($membership->load('user'));
     }
 
     public function inviteTeacher(InviteTeacherRequest $request, Institution $institution)

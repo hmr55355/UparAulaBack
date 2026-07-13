@@ -30,8 +30,13 @@ class ExportController extends Controller
             'studentGroups',
             fn ($q) => $q->where('academic_year_id', $academicYear->id)
         )->get(['id', 'institution_id', 'first_name', 'last_name', 'document_number']);
-        $periodFinals = PeriodFinal::whereIn('group_subject_id', $groupSubjects->pluck('id'))->get();
-        $attendanceRecords = AttendanceRecord::whereIn('group_subject_id', $groupSubjects->pluck('id'))->get();
+        // Seleccionamos columnas explícitas (igual que groups/groupSubjects arriba) para
+        // no cargar created_at/updated_at de cada fila — con un año completo de asistencia
+        // por institución esto puede ser decenas de miles de filas.
+        $periodFinals = PeriodFinal::whereIn('group_subject_id', $groupSubjects->pluck('id'))
+            ->get(['id', 'student_id', 'group_subject_id', 'period_id', 'period_final', 'is_promoted', 'manually_adjusted', 'adjustment_reason', 'calculated_at']);
+        $attendanceRecords = AttendanceRecord::whereIn('group_subject_id', $groupSubjects->pluck('id'))
+            ->get(['id', 'student_id', 'group_subject_id', 'date', 'status', 'justification', 'notes', 'registered_by']);
 
         $data = [
             'academic_year' => $academicYear,

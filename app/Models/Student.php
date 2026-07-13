@@ -99,4 +99,14 @@ class Student extends Model
 
         return $user->isAdminOf($this->institution_id) || $this->isTaughtBy($user);
     }
+
+    /**
+     * True if the student is actively enrolled in the given group — used to
+     * reject grade entries for a student who isn't actually in the course's
+     * group (e.g. a stale/mistaken student_id from the client).
+     */
+    public function isEnrolledInGroup(int $groupId): bool
+    {
+        return $this->studentGroups()->where('group_id', $groupId)->where('status', 'activo')->exists();
+    }
 }

@@ -10,6 +10,7 @@ use App\Models\GroupSubject;
 use App\Models\Homework;
 use App\Models\HomeworkDelivery;
 use App\Models\Student;
+use App\Services\GradeCalculatorService;
 use Illuminate\Http\Request;
 
 class HomeworkController extends Controller
@@ -150,7 +151,7 @@ class HomeworkController extends Controller
         ]);
     }
 
-    public function bulkDeliveries(Request $request, Homework $homework)
+    public function bulkDeliveries(Request $request, Homework $homework, GradeCalculatorService $calculator)
     {
         $this->authorize('update', $homework->groupSubject);
 
@@ -163,34 +164,43 @@ class HomeworkController extends Controller
             'deliveries.*.notes' => ['nullable', 'string'],
         ]);
 
-        $saved = collect($validated['deliveries'])->map(function (array $item) use ($homework, $request) {
-            $delivery = HomeworkDelivery::updateOrCreate(
-                ['homework_id' => $homework->id, 'student_id' => $item['student_id']],
-                [
-                    'status' => $item['status'],
-                    'delivery_date' => $item['delivery_date'] ?? null,
-                    'score' => $item['score'] ?? null,
-                    'notes' => $item['notes'] ?? null,
-                ]
-            );
+        $gradedStudentIds = [];
 
-            if ($homework->is_graded && $homework->grade_column_id && ($item['score'] ?? null) !== null) {
-                // Not withoutEvents(): writing through the normal Grade model lets
-                // GradeObserver trigger the usual section/period recalculation cascade,
-                // same as GradeController::bulk.
-                Grade::updateOrCreate(
-                    ['student_id' => $item['student_id'], 'grade_column_id' => $homework->grade_column_id],
+        // withoutEvents: como en GradeController::bulk, guardamos todas las notas del
+        // taller sin disparar GradeObserver por fila, y recalculamos una sola vez por
+        // estudiante único al final en vez de una cascada completa por cada entrega.
+        $saved = Grade::withoutEvents(function () use ($validated, $homework, $request, &$gradedStudentIds) {
+            return collect($validated['deliveries'])->map(function (array $item) use ($homework, $request, &$gradedStudentIds) {
+                $delivery = HomeworkDelivery::updateOrCreate(
+                    ['homework_id' => $homework->id, 'student_id' => $item['student_id']],
                     [
-                        'group_subject_id' => $homework->group_subject_id,
-                        'period_id' => $homework->period_id,
-                        'score' => $item['score'],
-                        'registered_by' => $request->user()->id,
+                        'status' => $item['status'],
+                        'delivery_date' => $item['delivery_date'] ?? null,
+                        'score' => $item['score'] ?? null,
+                        'notes' => $item['notes'] ?? null,
                     ]
                 );
-            }
 
-            return $delivery;
+                if ($homework->is_graded && $homework->grade_column_id && ($item['score'] ?? null) !== null) {
+                    Grade::updateOrCreate(
+                        ['student_id' => $item['student_id'], 'grade_column_id' => $homework->grade_column_id],
+                        [
+                            'group_subject_id' => $homework->group_subject_id,
+                            'period_id' => $homework->period_id,
+                            'score' => $item['score'],
+                            'registered_by' => $request->user()->id,
+                        ]
+                    );
+                    $gradedStudentIds[] = $item['student_id'];
+                }
+
+                return $delivery;
+            });
         });
+
+        foreach (array_unique($gradedStudentIds) as $studentId) {
+            $calculator->recalculateForStudent($studentId, $homework->group_subject_id, $homework->period_id);
+        }
 
         return response()->json(['data' => $saved, 'count' => $saved->count()], 201);
     }

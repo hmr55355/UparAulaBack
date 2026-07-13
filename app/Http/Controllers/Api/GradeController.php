@@ -13,6 +13,7 @@ use App\Models\Period;
 use App\Models\PeriodFinal;
 use App\Models\SectionFinal;
 use App\Models\Student;
+use App\Models\StudentGroup;
 use App\Services\GradeCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -76,6 +77,7 @@ class GradeController extends Controller
         $column = GradeColumn::findOrFail($request->grade_column_id);
         $this->authorizeAndAssertEditable($column);
         $this->assertScoreWithinRange($request->score, $column);
+        $this->assertStudentEnrolled($request->student_id, $column->groupSubject->group_id);
 
         $grade = Grade::updateOrCreate(
             ['student_id' => $request->student_id, 'grade_column_id' => $column->id],
@@ -93,31 +95,65 @@ class GradeController extends Controller
         return response()->json(['data' => $grade->fresh()], 201);
     }
 
-    public function bulk(BulkGradesRequest $request)
+    public function bulk(BulkGradesRequest $request, GradeCalculatorService $calculator)
     {
         $columnIds = collect($request->grades)->pluck('grade_column_id')->unique();
-        $columns = GradeColumn::whereIn('id', $columnIds)->get()->keyBy('id');
+        $columns = GradeColumn::with('groupSubject')->whereIn('id', $columnIds)->get()->keyBy('id');
 
         foreach ($columns as $column) {
             $this->authorizeAndAssertEditable($column);
         }
 
-        $saved = [];
-        foreach ($request->grades as $item) {
-            $column = $columns->get($item['grade_column_id']);
-            $this->assertScoreWithinRange($item['score'] ?? null, $column);
+        // Pre-carga de matrícula por grupo en una sola consulta — evita 1 query por
+        // fila para validar que cada estudiante realmente pertenezca al grupo del
+        // group_subject de su columna.
+        $groupIds = $columns->pluck('groupSubject.group_id')->filter()->unique();
+        $enrolledByGroup = StudentGroup::whereIn('group_id', $groupIds)
+            ->where('status', 'activo')
+            ->get(['student_id', 'group_id'])
+            ->groupBy('group_id')
+            ->map(fn ($rows) => $rows->pluck('student_id')->all());
 
-            $saved[] = Grade::updateOrCreate(
-                ['student_id' => $item['student_id'], 'grade_column_id' => $column->id],
-                [
-                    'group_subject_id' => $column->group_subject_id,
-                    'period_id' => $column->period_id,
-                    'score' => $item['score'] ?? null,
-                    'is_excused' => $item['is_excused'] ?? false,
-                    'notes' => $item['notes'] ?? null,
-                    'registered_by' => $request->user()->id,
-                ]
-            );
+        $saved = [];
+        $affected = collect();
+
+        // withoutEvents: escribimos todo primero sin disparar GradeObserver, y
+        // recalculamos una sola vez por (estudiante, group_subject, período) único
+        // al final — evita cascadas de recálculo repetidas si el mismo estudiante
+        // aparece en más de una fila (varias columnas guardadas de una vez).
+        Grade::withoutEvents(function () use ($request, $columns, $enrolledByGroup, &$saved, &$affected) {
+            foreach ($request->grades as $item) {
+                $column = $columns->get($item['grade_column_id']);
+                $this->assertScoreWithinRange($item['score'] ?? null, $column);
+
+                $groupId = $column->groupSubject->group_id;
+                abort_if(
+                    ! in_array($item['student_id'], $enrolledByGroup->get($groupId, []), true),
+                    422,
+                    'Uno de los estudiantes no está matriculado en este grupo.'
+                );
+
+                $saved[] = Grade::updateOrCreate(
+                    ['student_id' => $item['student_id'], 'grade_column_id' => $column->id],
+                    [
+                        'group_subject_id' => $column->group_subject_id,
+                        'period_id' => $column->period_id,
+                        'score' => $item['score'] ?? null,
+                        'is_excused' => $item['is_excused'] ?? false,
+                        'notes' => $item['notes'] ?? null,
+                        'registered_by' => $request->user()->id,
+                    ]
+                );
+
+                $affected->put(
+                    "{$item['student_id']}:{$column->group_subject_id}:{$column->period_id}",
+                    [$item['student_id'], $column->group_subject_id, $column->period_id]
+                );
+            }
+        });
+
+        foreach ($affected as [$studentId, $groupSubjectId, $periodId]) {
+            $calculator->recalculateForStudent($studentId, $groupSubjectId, $periodId);
         }
 
         return response()->json(['data' => $saved, 'count' => count($saved)], 201);
@@ -241,6 +277,16 @@ class GradeController extends Controller
     {
         $this->authorize('update', $column->groupSubject);
         abort_if($column->period->is_closed, 422, 'El período está cerrado. Las notas no se pueden editar.');
+    }
+
+    private function assertStudentEnrolled(int $studentId, int $groupId): void
+    {
+        $student = Student::find($studentId);
+        abort_if(
+            ! $student || ! $student->isEnrolledInGroup($groupId),
+            422,
+            'El estudiante no está matriculado en este grupo.'
+        );
     }
 
     private function assertScoreWithinRange(?float $score, GradeColumn $column): void

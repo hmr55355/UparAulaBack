@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands\Notifications;
 
+use App\Jobs\SendWebPushNotificationJob;
 use App\Models\AppNotification;
 use App\Models\ClassSchedule;
-use App\Services\WebPushService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -19,7 +19,7 @@ class NotifyUpcomingClassPush extends Command
 
     protected $description = 'Envía un push 5 minutos antes de que inicie cada bloque de clase';
 
-    public function handle(WebPushService $webPush): int
+    public function handle(): int
     {
         $now = Carbon::now();
         $today = $now->toDateString();
@@ -53,7 +53,9 @@ class NotifyUpcomingClassPush extends Command
             );
 
             if ($notification->wasRecentlyCreated) {
-                $webPush->sendToUser($teacher, $notification->title, $notification->body, $notification->data);
+                // Job en cola: si varias clases empiezan en la misma ventana de 1 minuto,
+                // no serializamos las llamadas de red del push dentro de este comando.
+                SendWebPushNotificationJob::dispatch($teacher->id, $notification->title, $notification->body, $notification->data);
             }
         }
 

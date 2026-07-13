@@ -7,6 +7,7 @@ use App\Models\AttendanceRecord;
 use App\Models\GroupSubject;
 use App\Models\Period;
 use App\Models\Student;
+use App\Services\GradeCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -56,7 +57,7 @@ class AttendanceController extends Controller
         ]);
     }
 
-    public function bulk(Request $request)
+    public function bulk(Request $request, GradeCalculatorService $calculator)
     {
         $validated = $request->validate([
             'group_subject_id' => ['required', 'integer', 'exists:group_subjects,id'],
@@ -71,38 +72,55 @@ class AttendanceController extends Controller
         $this->authorize('update', $groupSubject);
         $this->assertPeriodOpenForDate($groupSubject, $validated['date']);
 
+        // withoutEvents: guardamos todo el pase de lista sin disparar AttendanceObserver
+        // por cada fila (antes cada create()/update() lanzaba la cascada completa de
+        // recálculo de notas, entrelazada con las escrituras) — recalculamos una sola
+        // vez por estudiante después, ya con todo guardado.
         $saved = DB::transaction(function () use ($validated, $request) {
-            // Not updateOrCreate(): its match query compares the raw 'date' string
-            // against the stored value, which Eloquent's `date` cast persists with a
-            // "00:00:00" time suffix — an exact-string match would never find the
-            // existing row and would attempt a duplicate insert on every re-save of
-            // the same day. whereDate() correctly ignores that suffix.
-            return collect($validated['records'])->map(function (array $record) use ($validated, $request) {
-                $existing = AttendanceRecord::where('student_id', $record['student_id'])
-                    ->where('group_subject_id', $validated['group_subject_id'])
-                    ->whereDate('date', $validated['date'])
-                    ->first();
+            return AttendanceRecord::withoutEvents(function () use ($validated, $request) {
+                // Not updateOrCreate(): its match query compares the raw 'date' string
+                // against the stored value, which Eloquent's `date` cast persists with a
+                // "00:00:00" time suffix — an exact-string match would never find the
+                // existing row and would attempt a duplicate insert on every re-save of
+                // the same day. whereDate() correctly ignores that suffix.
+                return collect($validated['records'])->map(function (array $record) use ($validated, $request) {
+                    $existing = AttendanceRecord::where('student_id', $record['student_id'])
+                        ->where('group_subject_id', $validated['group_subject_id'])
+                        ->whereDate('date', $validated['date'])
+                        ->first();
 
-                $attributes = [
-                    'status' => $record['status'],
-                    'justification' => $record['justification'] ?? null,
-                    'registered_by' => $request->user()->id,
-                ];
+                    $attributes = [
+                        'status' => $record['status'],
+                        'justification' => $record['justification'] ?? null,
+                        'registered_by' => $request->user()->id,
+                    ];
 
-                if ($existing) {
-                    $existing->update($attributes);
+                    if ($existing) {
+                        $existing->update($attributes);
 
-                    return $existing;
-                }
+                        return $existing;
+                    }
 
-                return AttendanceRecord::create([
-                    'student_id' => $record['student_id'],
-                    'group_subject_id' => $validated['group_subject_id'],
-                    'date' => $validated['date'],
-                    ...$attributes,
-                ]);
+                    return AttendanceRecord::create([
+                        'student_id' => $record['student_id'],
+                        'group_subject_id' => $validated['group_subject_id'],
+                        'date' => $validated['date'],
+                        ...$attributes,
+                    ]);
+                });
             });
         });
+
+        $period = Period::where('academic_year_id', $groupSubject->academic_year_id)
+            ->whereDate('start_date', '<=', $validated['date'])
+            ->whereDate('end_date', '>=', $validated['date'])
+            ->first();
+
+        if ($period) {
+            foreach ($saved->pluck('student_id')->unique() as $studentId) {
+                $calculator->recalculateForStudent($studentId, $groupSubject->id, $period->id);
+            }
+        }
 
         return response()->json(['data' => $saved, 'count' => $saved->count()], 201);
     }

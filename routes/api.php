@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{institution}', [InstitutionController::class, 'update']);
         Route::get('/{institution}/logo', [InstitutionController::class, 'logo']);
         Route::get('/{institution}/teachers', [InstitutionController::class, 'teachers']);
+        Route::post('/{institution}/teachers', [InstitutionController::class, 'createTeacher']);
         Route::post('/{institution}/teachers/invite', [InstitutionController::class, 'inviteTeacher']);
         Route::patch('/{institution}/teachers/{userId}/role', [InstitutionController::class, 'updateTeacherRole']);
         Route::delete('/{institution}/teachers/{userId}', [InstitutionController::class, 'removeTeacher']);

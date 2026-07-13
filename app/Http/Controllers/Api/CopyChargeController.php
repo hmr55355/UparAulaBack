@@ -29,6 +29,7 @@ class CopyChargeController extends Controller
                 'payments as paid_count' => fn ($q) => $q->where('status', 'pagado'),
                 'payments as total_students',
             ])
+            ->withSum('payments as collected_amount', 'amount_paid')
             ->orderByDesc('charge_date')
             ->get()
             ->map(function (CopyCharge $charge) {
@@ -36,8 +37,7 @@ class CopyChargeController extends Controller
                 // (el cobro es "cantidad × precio" de SU PROPIA copia, no un monto
                 // compartido entre todo el grupo) — así que lo recaudable total es
                 // total_amount × cantidad de estudiantes, no total_amount a secas.
-                $collected = $charge->payments()->sum('amount_paid');
-                $charge->collected_amount = $collected;
+                $collected = $charge->collected_amount ?? 0;
                 $charge->pending_amount = ($charge->total_amount * $charge->total_students) - $collected;
 
                 return $charge;
