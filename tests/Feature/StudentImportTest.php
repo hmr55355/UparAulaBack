@@ -82,6 +82,44 @@ class StudentImportTest extends TestCase
         $this->assertDatabaseCount('student_groups', 2);
     }
 
+    public function test_importing_a_simat_style_export_matches_columns_by_header(): void
+    {
+        $file = $this->buildXlsx([
+            ['Nombre del Grado', 'Grado', 'Grupo', 'Estado Matrícula', 'Fecha de matrícula', 'Apellidos', 'Nombres', 'Estudiante - Documento', 'Estudiante - Tipo de documento', 'Acudiente - Teléfono celular', 'Estudiante - Resumen de discapacidades'],
+            ['Décimo', 10, '3MMGC', 'Activo', '11 de Diciembre de 2025', 'Alvarado Niño', 'Jesus Adrian', 1067609751, 'Tarjeta de Identidad', 3153848628, 'Ninguna'],
+            ['Décimo', 10, '3MMGC', 'Activo', '22 de Diciembre de 2025', 'Calderon Arguello', 'Moises David', 5760012, 'Permiso por protección temporal', 3215369529, 'Ninguna'],
+        ]);
+
+        $response = $this->actingAs($this->admin, 'sanctum')->postJson('/api/students/import', [
+            'group_id' => $this->group->id,
+            'file' => $file,
+        ]);
+
+        $response->assertOk();
+        $this->assertEquals(2, $response->json('created'));
+        $this->assertDatabaseHas('students', [
+            'first_name' => 'Jesus Adrian', 'last_name' => 'Alvarado Niño', 'document_type' => 'TI', 'document_number' => '1067609751',
+        ]);
+        $this->assertDatabaseHas('students', [
+            'first_name' => 'Moises David', 'last_name' => 'Calderon Arguello', 'document_type' => 'PPT',
+        ]);
+    }
+
+    public function test_importing_a_file_without_recognizable_headers_returns_a_clear_error(): void
+    {
+        $file = $this->buildXlsx([
+            ['Columna A', 'Columna B'],
+            ['algo', 'algo'],
+        ]);
+
+        $response = $this->actingAs($this->admin, 'sanctum')->postJson('/api/students/import', [
+            'group_id' => $this->group->id,
+            'file' => $file,
+        ]);
+
+        $response->assertStatus(422);
+    }
+
     public function test_a_non_admin_teacher_is_forbidden_from_importing(): void
     {
         $teacher = User::factory()->create();
