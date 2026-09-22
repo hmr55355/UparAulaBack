@@ -80,6 +80,8 @@ class StudentImportTest extends TestCase
         $this->assertEquals(1, $response->json('skipped'));
         $this->assertDatabaseHas('students', ['first_name' => 'Ana', 'last_name' => 'Gómez']);
         $this->assertDatabaseCount('student_groups', 2);
+        // "Mis cursos" lee este contador: debe reflejar a los importados.
+        $this->assertEquals(2, $this->group->fresh()->student_count);
     }
 
     public function test_importing_a_simat_style_export_matches_columns_by_header(): void

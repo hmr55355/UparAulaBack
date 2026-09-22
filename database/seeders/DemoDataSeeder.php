@@ -9,7 +9,10 @@ use App\Models\ClassSchedule;
 use App\Models\Grade;
 use App\Models\GradeSection;
 use App\Models\GradeTemplate;
+use App\Models\ClassBlock;
+use App\Models\GradeLevel;
 use App\Models\Group;
+use App\Models\Shift;
 use App\Models\GroupSubject;
 use App\Models\Institution;
 use App\Models\InstitutionTeacher;
@@ -26,7 +29,7 @@ use Illuminate\Support\Facades\Hash;
 /**
  * Seeds one fully working demo tenant matching el horario real del docente
  * (imagen aSc Timetables compartida por el usuario): 7 grupos, 3 materias, 8
- * group_subjects, 19 bloques de horario/semana, ~30 estudiantes por grupo, y
+ * group_subjects, 22 horas de clase/semana en bloques con descanso, ~30 estudiantes por grupo, y
  * asistencia/notas históricas para los días de esta semana que ya pasaron —
  * para que un docente pueda probar la app contra una semana realista completa
  * en vez de una app vacía. Mirrors "NOTAS FINALES PARA EL AGENTE" #19 y #34.
@@ -129,22 +132,45 @@ class DemoDataSeeder extends Seeder
             '1004' => ['grade' => '10', 'section' => '4'],
         ];
 
+        // --- Grados y jornada (con los bloques reales del horario del docente) ---
+        $gradeLevels = [
+            '10' => GradeLevel::create(['institution_id' => $institution->id, 'name' => 'Décimo', 'level' => 10, 'sort_order' => 10]),
+            '11' => GradeLevel::create(['institution_id' => $institution->id, 'name' => 'Once', 'level' => 11, 'sort_order' => 11]),
+        ];
+        $shift = Shift::create(['institution_id' => $institution->id, 'name' => 'Mañana', 'sort_order' => 0]);
+        $blockSpecs = [
+            ['clase', '1', '06:15', '07:10'], ['clase', '2', '07:10', '08:05'], ['clase', '3', '08:05', '09:00'],
+            ['descanso', 'Descanso', '09:00', '09:30'],
+            ['clase', '4', '09:30', '10:25'], ['clase', '5', '10:25', '11:20'], ['clase', '6', '11:20', '12:15'],
+        ];
+        foreach ($blockSpecs as $index => [$type, $label, $start, $end]) {
+            ClassBlock::create([
+                'shift_id' => $shift->id, 'type' => $type, 'label' => $label,
+                'start_time' => $start, 'end_time' => $end, 'sort_order' => $index,
+            ]);
+        }
+
         /** @var array<string, Group> $groups */
         $groups = [];
         foreach ($groupSpecs as $name => $meta) {
             $groups[$name] = Group::create([
                 'institution_id' => $institution->id,
                 'academic_year_id' => $academicYear->id,
+                'grade_level_id' => $gradeLevels[$meta['grade']]->id,
+                'shift_id' => $shift->id,
                 'name' => $name,
                 'grade_level' => $meta['grade'],
                 'section' => $meta['section'],
             ]);
         }
 
-        // --- Materias (3) ---
+        // --- Materias (3), vinculadas a sus grados ---
         $calculo = Subject::create(['institution_id' => $institution->id, 'name' => 'Cálculo', 'color' => '#1565C0']);
         $trigonometria = Subject::create(['institution_id' => $institution->id, 'name' => 'Trigonometría', 'color' => '#1976D2']);
         $estadistica = Subject::create(['institution_id' => $institution->id, 'name' => 'Estadística', 'color' => '#2E7D32']);
+        $calculo->gradeLevels()->sync([$gradeLevels['11']->id]);
+        $trigonometria->gradeLevels()->sync([$gradeLevels['10']->id]);
+        $estadistica->gradeLevels()->sync([$gradeLevels['10']->id]);
 
         // --- Group-subjects (8), todos dictados por Hernis ---
         $groupSubjectSpecs = [
@@ -189,7 +215,7 @@ class DemoDataSeeder extends Seeder
             $calculator->applyTemplate($template, $groupSubject, $activePeriod);
         }
 
-        // --- Horario real (19 bloques/semana) ---
+        // --- Horario real (22 horas de clase/semana, calcado del horario aSc del docente) ---
         // [día ISO (1=lun), hora inicio, hora fin, salón, grupo, materia]
         $scheduleRows = [
             [1, '06:15:00', '07:10:00', 'HC.1101', '1101', 'Cálculo'],
@@ -205,15 +231,18 @@ class DemoDataSeeder extends Seeder
             [2, '11:20:00', '12:15:00', 'HC.1101', '1101', 'Cálculo'],
 
             [3, '07:10:00', '08:05:00', 'HC.1001', '1001', 'Trigonometría'],
-            [3, '08:05:00', '09:00:00', 'HC.1004', '1004', 'Trigonometría'],
-            [3, '09:30:00', '10:25:00', 'HC.1004', '1004', 'Trigonometría'],
+            [3, '08:05:00', '09:00:00', null, '1004', 'Trigonometría'],
+            [3, '09:30:00', '10:25:00', null, '1004', 'Trigonometría'],
             [3, '11:20:00', '12:15:00', 'HC.1103', '1103', 'Cálculo'],
 
             [4, '08:05:00', '09:00:00', 'HC.1001', '1001', 'Trigonometría'],
-            [4, '09:30:00', '10:25:00', 'HC.1002', '1002', 'Trigonometría'],
+            [4, '09:30:00', '10:25:00', 'HC.1001', '1001', 'Trigonometría'],
+            [4, '10:25:00', '11:20:00', 'HC.1002', '1002', 'Trigonometría'],
+            [4, '11:20:00', '12:15:00', 'HC.1002', '1002', 'Trigonometría'],
 
             [5, '07:10:00', '08:05:00', 'HC.1103', '1103', 'Cálculo'],
-            [5, '08:05:00', '09:00:00', 'HC.1004', '1004', 'Trigonometría'],
+            [5, '08:05:00', '09:00:00', 'HC.1103', '1103', 'Cálculo'],
+            [5, '09:30:00', '10:25:00', null, '1004', 'Trigonometría'],
             [5, '11:20:00', '12:15:00', 'HC.1003', '1003', 'Trigonometría'],
         ];
 

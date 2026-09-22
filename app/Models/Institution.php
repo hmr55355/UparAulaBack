@@ -33,6 +33,16 @@ class Institution extends Model
         return $this->hasMany(InstitutionTeacher::class);
     }
 
+    public function gradeLevels(): HasMany
+    {
+        return $this->hasMany(GradeLevel::class)->orderBy('sort_order')->orderBy('name');
+    }
+
+    public function shifts(): HasMany
+    {
+        return $this->hasMany(Shift::class)->orderBy('sort_order')->orderBy('name');
+    }
+
     public function academicYears(): HasMany
     {
         return $this->hasMany(AcademicYear::class);

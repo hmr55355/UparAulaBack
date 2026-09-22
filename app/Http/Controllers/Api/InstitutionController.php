@@ -13,6 +13,8 @@ use App\Models\AcademicYear;
 use App\Models\AppNotification;
 use App\Models\GroupSubject;
 use App\Models\Institution;
+use App\Models\Subject;
+use App\Models\Group;
 use App\Models\InstitutionTeacher;
 use App\Models\Period;
 use App\Models\User;
@@ -81,6 +83,8 @@ class InstitutionController extends Controller
             ]);
 
             $this->createDefaultPeriods($academicYear);
+            // Toda institución arranca con una jornada; el admin puede renombrarla o agregar más.
+            $institution->shifts()->create(['name' => 'Jornada única']);
 
             return $institution;
         });
@@ -293,8 +297,23 @@ class InstitutionController extends Controller
 
         $academicYear = AcademicYear::where('institution_id', $institution->id)->where('is_active', true)->first();
 
-        $groups = $institution->groups()->where('academic_year_id', $academicYear?->id)->get(['id', 'name', 'grade_level', 'section']);
-        $subjects = $institution->subjects()->get(['id', 'name', 'color']);
+        $groups = $institution->groups()->where('academic_year_id', $academicYear?->id)
+            ->orderBy('grade_level')->orderBy('name')
+            ->get(['id', 'name', 'grade_level', 'section', 'grade_level_id', 'shift_id']);
+        $subjects = $institution->subjects()->with('gradeLevels:id')->orderBy('name')->get(['id', 'name', 'color'])
+            ->map(fn ($subject) => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+                'color' => $subject->color,
+                'grade_level_ids' => $subject->gradeLevels->pluck('id'),
+            ]);
+
+        // Combinaciones grupo + materia que tienen sentido: la materia debe estar
+        // vinculada al grado del grupo (un grupo sin grado acepta cualquier materia).
+        $availablePairs = $groups->flatMap(fn ($group) => $subjects
+            ->filter(fn ($subject) => $group->grade_level_id === null || $subject['grade_level_ids']->contains($group->grade_level_id))
+            ->map(fn ($subject) => ['group_id' => $group->id, 'subject_id' => $subject['id']])
+        )->values();
 
         $assignments = GroupSubject::where('institution_id', $institution->id)
             ->where('academic_year_id', $academicYear?->id)
@@ -306,12 +325,23 @@ class InstitutionController extends Controller
             'groups' => $groups,
             'subjects' => $subjects,
             'assignments' => $assignments,
+            'available_pairs' => $availablePairs,
+            'grade_levels' => $institution->gradeLevels()->get(['id', 'name', 'level']),
+            'shifts' => $institution->shifts()->get(['id', 'name']),
         ]);
     }
 
     public function assignCourse(AssignCourseRequest $request, Institution $institution)
     {
         $this->authorize('manageAcademics', $institution);
+
+        $group = Group::findOrFail($request->group_id);
+        abort_if(
+            $group->grade_level_id !== null
+                && ! Subject::whereKey($request->subject_id)->whereHas('gradeLevels', fn ($q) => $q->whereKey($group->grade_level_id))->exists(),
+            422,
+            'Esta materia no está vinculada al grado del grupo. Vincúlala en Institución → Materias.'
+        );
 
         $groupSubject = GroupSubject::updateOrCreate(
             [

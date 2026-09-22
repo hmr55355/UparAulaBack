@@ -35,11 +35,21 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request)
     {
-        $user = User::where('email', $request->email)->first();
+        $login = trim($request->email);
+        $user = str_contains($login, '@')
+            ? User::where('email', $login)->first()
+            : User::where('username', mb_strtolower($login))->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Las credenciales no coinciden con nuestros registros.'],
+            ]);
+        }
+
+        // Un monitor desactivado por su docente ya no puede entrar.
+        if ($user->isMonitor() && ! $user->courseMonitors()->where('is_active', true)->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['Tu usuario de monitor está desactivado. Habla con tu docente.'],
             ]);
         }
 

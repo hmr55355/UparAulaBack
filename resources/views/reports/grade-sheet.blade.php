@@ -5,7 +5,7 @@
     $colorFor = function (?float $value) use ($minPassing, $red, $yellow, $green) {
         if ($value === null) return null;
         if ($value < $minPassing) return $red;
-        if ($value < $minPassing + 1) return $yellow;
+        if ($value < $minPassing + 2) return $yellow;
         return $green;
     };
     $periodFinalValues = [];

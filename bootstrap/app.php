@@ -13,6 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->throttleApi();
+        $middleware->alias([
+            'not.monitor' => \App\Http\Middleware\EnsureNotMonitor::class,
+            'monitor' => \App\Http\Middleware\EnsureMonitor::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -261,7 +261,7 @@ class GradeSheetReportService
         if ($value < $minPassing) {
             return self::RED;
         }
-        if ($value < $minPassing + 1) {
+        if ($value < $minPassing + 2) {
             return self::YELLOW;
         }
 

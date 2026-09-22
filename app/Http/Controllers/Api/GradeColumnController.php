@@ -90,7 +90,7 @@ class GradeColumnController extends Controller
 
         return $request->validate([
             'grade_section_id' => [$partial ? 'sometimes' : 'required', 'integer', 'exists:grade_sections,id'],
-            'column_type' => [$required, 'in:manual,from_attendance,section_average,custom_formula'],
+            'column_type' => [$required, 'in:manual,from_attendance,section_average,custom_formula,from_participation'],
             'name' => [$required, 'string', 'max:255'],
             'short_name' => ['nullable', 'string', 'max:8'],
             'description' => ['nullable', 'string'],

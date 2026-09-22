@@ -34,7 +34,7 @@ class BulkSaveGradeSheetRequest extends FormRequest
             'sections.*.columns.*.name' => ['required', 'string', 'max:255'],
             'sections.*.columns.*.short_name' => ['nullable', 'string', 'max:8'],
             'sections.*.columns.*.description' => ['nullable', 'string'],
-            'sections.*.columns.*.column_type' => ['required', 'in:manual,from_attendance,section_average,custom_formula'],
+            'sections.*.columns.*.column_type' => ['required', 'in:manual,from_attendance,section_average,custom_formula,from_participation'],
             'sections.*.columns.*.weight' => ['required', 'numeric', 'min:0', 'max:100'],
             'sections.*.columns.*.max_score' => ['sometimes', 'numeric', 'min:1'],
             'sections.*.columns.*.date' => ['nullable', 'date'],

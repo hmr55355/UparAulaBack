@@ -10,6 +10,12 @@ use App\Http\Controllers\Api\CopyChargeController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\GradeColumnController;
 use App\Http\Controllers\Api\GradeController;
+use App\Http\Controllers\Api\GradeExcelController;
+use App\Http\Controllers\Api\CourseMonitorController;
+use App\Http\Controllers\Api\MonitorController;
+use App\Http\Controllers\Api\ParticipationController;
+use App\Http\Controllers\Api\GradeLevelController;
+use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\GradeSectionController;
 use App\Http\Controllers\Api\GradeTemplateController;
 use App\Http\Controllers\Api\GroupController;
@@ -38,7 +44,8 @@ Route::prefix('auth')->middleware('throttle:auth')->group(function () {
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
 
-Route::middleware('auth:sanctum')->group(function () {
+// not.monitor: los monitores de curso solo usan el grupo /monitor de más abajo.
+Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::prefix('auth')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
@@ -63,7 +70,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{institution}/assignment-grid', [InstitutionController::class, 'assignmentGrid']);
         Route::post('/{institution}/assign-course', [InstitutionController::class, 'assignCourse']);
         Route::delete('/{institution}/unassign-course', [InstitutionController::class, 'unassignCourse']);
+        Route::get('/{institution}/grade-levels', [GradeLevelController::class, 'index']);
+        Route::post('/{institution}/grade-levels', [GradeLevelController::class, 'store']);
+        Route::get('/{institution}/shifts', [ShiftController::class, 'index']);
+        Route::post('/{institution}/shifts', [ShiftController::class, 'store']);
     });
+
+    Route::put('/grade-levels/{gradeLevel}', [GradeLevelController::class, 'update']);
+    Route::delete('/grade-levels/{gradeLevel}', [GradeLevelController::class, 'destroy']);
+    Route::put('/shifts/{shift}', [ShiftController::class, 'update']);
+    Route::delete('/shifts/{shift}', [ShiftController::class, 'destroy']);
+    Route::put('/shifts/{shift}/class-blocks', [ShiftController::class, 'saveBlocks']);
+    Route::get('/shifts/{shift}/class-blocks/infer', [ShiftController::class, 'inferBlocks']);
 
     Route::get('/academic-years', [AcademicYearController::class, 'index']);
     Route::post('/academic-years', [AcademicYearController::class, 'store']);
@@ -108,6 +126,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/grade-templates/{gradeTemplate}/apply', [GradeTemplateController::class, 'apply']);
 
     Route::post('/grades/bulk', [GradeController::class, 'bulk']);
+    Route::get('/grades/excel-template', [GradeExcelController::class, 'template']);
+    Route::post('/grades/excel-import', [GradeExcelController::class, 'import']);
     Route::get('/grades/student/{studentId}', [GradeController::class, 'studentGrades']);
     Route::get('/grades', [GradeController::class, 'index']);
     Route::post('/grades', [GradeController::class, 'store']);
@@ -131,6 +151,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/attendance/bulk', [AttendanceController::class, 'bulk']);
     Route::get('/attendance/stats', [AttendanceController::class, 'stats']);
+    Route::get('/attendance/sheet', [AttendanceController::class, 'sheet']);
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::put('/attendance/{attendanceRecord}', [AttendanceController::class, 'update']);
 
@@ -195,6 +216,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/{report}', [ReportController::class, 'show']);
     Route::get('/reports/{report}/download', [ReportController::class, 'download']);
 
+    // Monitores de curso (lado del docente) y participaciones.
+    Route::get('/group-subjects/{groupSubject}/monitors', [CourseMonitorController::class, 'index']);
+    Route::post('/group-subjects/{groupSubject}/monitors', [CourseMonitorController::class, 'store']);
+    Route::patch('/course-monitors/{courseMonitor}', [CourseMonitorController::class, 'update']);
+    Route::get('/monitor-submissions', [CourseMonitorController::class, 'submissions']);
+    Route::get('/monitor-submissions/{submission}', [CourseMonitorController::class, 'showSubmission']);
+    Route::post('/monitor-submissions/{submission}/approve', [CourseMonitorController::class, 'approve']);
+    Route::post('/monitor-submissions/{submission}/reject', [CourseMonitorController::class, 'reject']);
+    Route::get('/participations', [ParticipationController::class, 'index']);
+    Route::post('/participations', [ParticipationController::class, 'store']);
+    Route::delete('/participations/{participation}', [ParticipationController::class, 'destroy']);
+
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
@@ -205,4 +238,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/students/import', [StudentImportController::class, 'store']);
     Route::get('/academic-years/{academicYear}/export', [ExportController::class, 'yearData']);
+});
+
+// Cuenta de monitor de curso: solo esto (más cerrar sesión / ver su usuario).
+Route::middleware(['auth:sanctum', 'monitor'])->prefix('monitor')->group(function () {
+    Route::get('/courses', [MonitorController::class, 'courses']);
+    Route::get('/courses/{courseMonitor}/roster', [MonitorController::class, 'roster']);
+    Route::post('/courses/{courseMonitor}/submissions', [MonitorController::class, 'submit']);
+    Route::get('/submissions', [MonitorController::class, 'submissions']);
+    Route::delete('/submissions/{submission}', [MonitorController::class, 'cancel']);
 });

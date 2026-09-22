@@ -157,6 +157,26 @@ class AttendanceTest extends TestCase
         $this->assertEquals(2, $response->json('data.0.ausente_injustificado'));
     }
 
+    public function test_sheet_lists_students_dates_and_records_of_the_period(): void
+    {
+        foreach (['2026-02-09' => 'tarde', '2026-02-02' => 'ausente_injustificado'] as $date => $status) {
+            $this->actingAs($this->teacher, 'sanctum')->postJson('/api/attendance/bulk', [
+                'group_subject_id' => $this->groupSubject->id,
+                'date' => $date,
+                'records' => [['student_id' => $this->student->id, 'status' => $status]],
+            ])->assertCreated();
+        }
+
+        $response = $this->actingAs($this->teacher, 'sanctum')->getJson(
+            "/api/attendance/sheet?groupSubjectId={$this->groupSubject->id}&periodId={$this->period->id}"
+        );
+
+        $response->assertOk();
+        $this->assertEquals([$this->student->id], collect($response->json('students'))->pluck('id')->all());
+        $this->assertEquals(['2026-02-02', '2026-02-09'], $response->json('dates'));
+        $this->assertEquals('ausente_injustificado', $response->json("records.{$this->student->id}.2026-02-02.status"));
+    }
+
     public function test_cannot_save_attendance_for_a_closed_period(): void
     {
         $this->period->update(['is_closed' => true]);

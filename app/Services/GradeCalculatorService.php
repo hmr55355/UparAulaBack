@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\StudentGroup;
+use App\Models\Participation;
 use App\Models\AttendanceRecord;
 use App\Models\Grade;
 use App\Models\GradeColumn;
@@ -46,6 +48,8 @@ class GradeCalculatorService
                     }
                     if ($column->column_type === 'from_attendance') {
                         $this->calculateAttendanceColumn($studentId, $column);
+                    } elseif ($column->column_type === 'from_participation') {
+                        $this->calculateParticipationColumn($studentId, $column);
                     }
                 }
             }
@@ -100,6 +104,55 @@ class GradeCalculatorService
         $score = min((float) $column->max_score, $score);
 
         return $this->upsertGrade($studentId, $column, round($score, 1));
+    }
+
+    /**
+     * Paso 1b — from_participation: el estudiante con más participaciones (puntos)
+     * del curso en el período es la referencia de la nota máxima; los demás son
+     * proporcionales a él (puntos / máximo × nota máxima), nunca menos de 1.0.
+     * Sin ninguna participación en el curso todavía, la columna queda vacía.
+     * Solo cuentan participaciones aprobadas (las del monitor entran al aprobarse).
+     */
+    public function calculateParticipationColumn(int $studentId, GradeColumn $column): ?Grade
+    {
+        $period = Period::find($column->period_id);
+        if (! $period) {
+            return null;
+        }
+
+        $totals = Participation::query()
+            ->where('group_subject_id', $column->group_subject_id)
+            ->whereDate('date', '>=', $period->start_date)
+            ->whereDate('date', '<=', $period->end_date)
+            ->groupBy('student_id')
+            ->selectRaw('student_id, SUM(points) as total')
+            ->pluck('total', 'student_id');
+
+        $max = (float) ($totals->max() ?? 0);
+        if ($max <= 0) {
+            return $this->upsertGrade($studentId, $column, null);
+        }
+
+        $score = ((float) ($totals[$studentId] ?? 0) / $max) * (float) $column->max_score;
+
+        return $this->upsertGrade($studentId, $column, round(max(1.0, $score), 1));
+    }
+
+    /**
+     * Recalcula a todo el curso en un período. La nota de participación es relativa
+     * al que más participa, así que un cambio de un estudiante mueve la de todos.
+     */
+    public function recalculateCourse(int $groupSubjectId, int $periodId): void
+    {
+        $groupSubject = GroupSubject::find($groupSubjectId);
+        if (! $groupSubject) {
+            return;
+        }
+
+        $studentIds = StudentGroup::where('group_id', $groupSubject->group_id)->where('status', 'activo')->pluck('student_id');
+        foreach ($studentIds as $studentId) {
+            $this->recalculateForStudent($studentId, $groupSubjectId, $periodId);
+        }
     }
 
     /**

@@ -27,7 +27,20 @@ class User extends Authenticatable
         'avatar',
         'phone',
         'notification_preferences',
+        'username',
+        'account_type',
     ];
+
+    /** Cuenta de monitor de curso (estudiante): solo ve sus cursos asignados. */
+    public function isMonitor(): bool
+    {
+        return $this->account_type === 'monitor';
+    }
+
+    public function courseMonitors(): HasMany
+    {
+        return $this->hasMany(CourseMonitor::class);
+    }
 
     public function institutionTeachers(): HasMany
     {

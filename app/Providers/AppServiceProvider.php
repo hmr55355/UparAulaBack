@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Models\AttendanceRecord;
+use App\Models\StudentGroup;
 use App\Models\Grade;
 use App\Observers\AttendanceObserver;
+use App\Observers\StudentGroupObserver;
 use App\Observers\GradeObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\RateLimiter;
@@ -37,5 +39,6 @@ class AppServiceProvider extends ServiceProvider
 
         Grade::observe(GradeObserver::class);
         AttendanceRecord::observe(AttendanceObserver::class);
+        StudentGroup::observe(StudentGroupObserver::class);
     }
 }
