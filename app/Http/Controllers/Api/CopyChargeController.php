@@ -96,17 +96,44 @@ class CopyChargeController extends Controller
         $quantity = $validated['quantity'] ?? $copyCharge->quantity;
         $unitPrice = $validated['unit_price'] ?? $copyCharge->unit_price;
 
+        $newTotal = $quantity * $unitPrice;
+        $totalChanged = round((float) $newTotal, 2) !== round((float) $copyCharge->total_amount, 2);
+
         $copyCharge->update([
             ...$validated,
-            'total_amount' => $quantity * $unitPrice,
+            'total_amount' => $newTotal,
         ]);
+
+        // Con otro total, "pagado" y "pago parcial" se reevalúan contra lo abonado
+        // (quien pagó el total viejo puede quedar debiendo la diferencia). Los
+        // exonerados no se tocan.
+        if ($totalChanged) {
+            $copyCharge->payments()->where('status', '!=', 'exonerado')->get()
+                ->each(function (StudentCopyPayment $payment) use ($newTotal) {
+                    $paid = (float) $payment->amount_paid;
+                    $status = $paid <= 0 ? 'debe' : ($paid >= (float) $newTotal ? 'pagado' : 'pago_parcial');
+                    if ($status !== $payment->status) {
+                        $payment->update(['status' => $status]);
+                    }
+                });
+        }
 
         return response()->json(['data' => $copyCharge->fresh()]);
     }
 
-    public function destroy(CopyCharge $copyCharge)
+    public function destroy(Request $request, CopyCharge $copyCharge)
     {
         $this->authorize('view', $copyCharge->group->institution);
+
+        // Mismo patrón que borrar una tarea con notas: si ya hay dinero recaudado,
+        // se pide confirmación explícita antes de perder ese registro.
+        $collected = (float) $copyCharge->payments()->sum('amount_paid');
+        if ($collected > 0 && ! $request->boolean('confirm')) {
+            return response()->json([
+                'message' => 'Este cobro ya tiene $'.number_format($collected, 0, ',', '.').' recaudados. Confirma la eliminación.',
+                'requires_confirmation' => true,
+            ], 409);
+        }
 
         $copyCharge->delete();
 

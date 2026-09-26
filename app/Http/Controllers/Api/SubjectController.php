@@ -31,7 +31,7 @@ class SubjectController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:50'],
-            'color' => ['sometimes', 'string', 'max:20'],
+            'color' => ['sometimes', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'grade_level_ids' => ['sometimes', 'array'],
             'grade_level_ids.*' => ['integer', Rule::exists('grade_levels', 'id')->where('institution_id', $institution->id)],
         ]);
@@ -49,7 +49,7 @@ class SubjectController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:50'],
-            'color' => ['sometimes', 'string', 'max:20'],
+            'color' => ['sometimes', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'grade_level_ids' => ['sometimes', 'array'],
             'grade_level_ids.*' => ['integer', Rule::exists('grade_levels', 'id')->where('institution_id', $subject->institution_id)],
         ]);

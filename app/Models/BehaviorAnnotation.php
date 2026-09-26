@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class BehaviorAnnotation extends Model
@@ -40,6 +41,12 @@ class BehaviorAnnotation extends Model
     public function group(): BelongsTo
     {
         return $this->belongsTo(Group::class);
+    }
+
+    /** Citaciones de seguimiento creadas desde esta anotación. */
+    public function citations(): HasMany
+    {
+        return $this->hasMany(ParentCitation::class);
     }
 
     public function registeredBy(): BelongsTo

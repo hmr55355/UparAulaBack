@@ -19,6 +19,7 @@ class InstitutionResource extends JsonResource
             'logo' => $this->logo,
             'grading_scale' => $this->grading_scale,
             'min_passing_grade' => $this->min_passing_grade,
+            'performance_levels' => $this->performanceLevels()->get(['id', 'name', 'national_level', 'min_score', 'max_score', 'color']),
             'my_role' => $this->when(
                 $request->user(),
                 fn () => $request->user()->membershipFor($this->id)?->role

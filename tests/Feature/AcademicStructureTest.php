@@ -103,6 +103,21 @@ class AcademicStructureTest extends TestCase
             ->assertOk();
     }
 
+    public function test_subject_name_and_color_can_be_edited_and_color_must_be_hex(): void
+    {
+        $subject = $this->actingAs($this->admin, 'sanctum')->postJson('/api/subjects', [
+            'institution_id' => $this->institution->id, 'name' => 'Calculo', 'color' => '#6A1B9A',
+        ])->assertCreated()->json('data');
+        $this->assertSame('#6A1B9A', $subject['color']);
+
+        $this->actingAs($this->admin, 'sanctum')->putJson("/api/subjects/{$subject['id']}", [
+            'name' => 'Cálculo', 'color' => '#00695C',
+        ])->assertOk()->assertJsonPath('data.name', 'Cálculo')->assertJsonPath('data.color', '#00695C');
+
+        $this->actingAs($this->admin, 'sanctum')->putJson("/api/subjects/{$subject['id']}", ['color' => 'azul'])
+            ->assertStatus(422);
+    }
+
     public function test_class_blocks_are_saved_in_order_and_overlaps_are_rejected(): void
     {
         $this->actingAs($this->admin, 'sanctum')->putJson("/api/shifts/{$this->shift->id}/class-blocks", [

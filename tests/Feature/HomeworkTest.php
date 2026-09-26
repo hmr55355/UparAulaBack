@@ -151,4 +151,33 @@ class HomeworkTest extends TestCase
             "/api/homeworks?groupSubjectId={$this->groupSubject->id}&periodId={$this->period->id}"
         )->assertForbidden();
     }
+
+    public function test_editing_a_graded_homework_syncs_its_column_and_deleting_it_recalculates_finals(): void
+    {
+        $homework = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/homeworks', [
+            'group_subject_id' => $this->groupSubject->id, 'period_id' => $this->period->id,
+            'title' => 'Taller', 'assigned_date' => '2026-02-01', 'due_date' => '2026-02-08',
+            'max_score' => 10.0, 'is_graded' => true, 'grade_section_id' => $this->section->id, 'weight' => 100,
+        ])->assertCreated()->json('data');
+
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/homeworks/{$homework['id']}", [
+            'title' => 'Taller corregido', 'max_score' => 5.0,
+        ])->assertOk();
+        $this->assertDatabaseHas('grade_columns', ['id' => $homework['grade_column_id'], 'name' => 'Taller corregido', 'max_score' => 5.0]);
+
+        $this->actingAs($this->teacher, 'sanctum')->postJson("/api/homeworks/{$homework['id']}/deliveries/bulk", [
+            'deliveries' => [['student_id' => $this->student->id, 'status' => 'entregado', 'score' => 4.0]],
+        ])->assertCreated();
+        $finalOf = fn () => PeriodFinal::where('student_id', $this->student->id)
+            ->where('group_subject_id', $this->groupSubject->id)->value('period_final');
+        $this->assertEquals(4.0, (float) $finalOf());
+
+        // Con notas: primero pide confirmación; al confirmar se borra y se recalcula.
+        $this->actingAs($this->teacher, 'sanctum')->deleteJson("/api/homeworks/{$homework['id']}")->assertStatus(409);
+        $this->actingAs($this->teacher, 'sanctum')->deleteJson("/api/homeworks/{$homework['id']}?confirm=1")->assertOk();
+
+        $this->assertDatabaseMissing('grade_columns', ['id' => $homework['grade_column_id']]);
+        $this->assertNull($finalOf());
+    }
+
 }

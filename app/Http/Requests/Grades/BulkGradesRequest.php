@@ -18,6 +18,7 @@ class BulkGradesRequest extends FormRequest
             'grades.*.student_id' => ['required', 'integer', 'exists:students,id'],
             'grades.*.grade_column_id' => ['required', 'integer', 'exists:grade_columns,id'],
             'grades.*.score' => ['nullable', 'numeric', 'min:1'],
+            'grades.*.convention_id' => ['nullable', 'integer', 'exists:grade_conventions,id'],
             'grades.*.is_excused' => ['sometimes', 'boolean'],
             'grades.*.notes' => ['nullable', 'string'],
         ];

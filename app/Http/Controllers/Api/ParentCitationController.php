@@ -83,7 +83,7 @@ class ParentCitationController extends Controller
 
     public function update(Request $request, ParentCitation $citation)
     {
-        abort_unless($citation->student->canBeAccessedBy($request->user()), 403);
+        $this->authorizeOwnerOrAdmin($request->user(), $citation);
 
         $validated = $request->validate([
             'parent_id' => ['sometimes', 'nullable', 'integer', 'exists:parents,id'],
@@ -116,12 +116,20 @@ class ParentCitationController extends Controller
 
         $citation->update($validated);
 
+        // Si la citación nació de una anotación, notificar/confirmar/realizarla
+        // cuenta como haber contactado al acudiente por esa anotación.
+        if (in_array($validated['status'], ['notificado', 'confirmado', 'realizado'], true)) {
+            $citation->behaviorAnnotation()
+                ->where('parent_contacted', false)
+                ->update(['parent_contacted' => true, 'parent_contact_date' => now()->toDateString()]);
+        }
+
         return response()->json(['data' => $citation]);
     }
 
     public function destroy(Request $request, ParentCitation $citation)
     {
-        abort_unless($citation->student->canBeAccessedBy($request->user()), 403);
+        $this->authorizeOwnerOrAdmin($request->user(), $citation);
 
         $citation->delete();
 
@@ -133,4 +141,18 @@ class ParentCitationController extends Controller
         $teachesGroup = $group->groupSubjects()->where('user_id', $user->id)->where('is_active', true)->exists();
         abort_unless($teachesGroup || $user->isAdminOf($group->institution_id), 403);
     }
+
+    /**
+     * El flujo de la citación (notificar, realizar…) es compartido por los docentes
+     * del estudiante; editar sus datos o borrarla, solo quien la registró o un admin.
+     */
+    private function authorizeOwnerOrAdmin(\App\Models\User $user, ParentCitation $citation): void
+    {
+        abort_unless(
+            (int) $citation->registered_by === (int) $user->id || $user->isAdminOf($citation->group->institution_id),
+            403,
+            'Solo quien registró la citación o un administrador puede modificarla.'
+        );
+    }
+
 }

@@ -16,6 +16,27 @@ use Illuminate\Support\Facades\DB;
 
 class GradeSectionController extends Controller
 {
+    /** Valores por defecto de los campos opcionales al crear una sección. */
+    private const SECTION_DEFAULTS = [
+        'short_name' => null,
+        'color' => '#1565C0',
+        'has_section_final' => true,
+        'section_final_label' => 'Def',
+        'final_calculation' => 'weighted_avg',
+    ];
+
+    /** Valores por defecto de los campos opcionales al crear una columna. */
+    private const COLUMN_DEFAULTS = [
+        'short_name' => null,
+        'description' => null,
+        'max_score' => 10.0,
+        'date' => null,
+        'attendance_base_score' => 10.0,
+        'absence_penalty' => 0.5,
+        'justified_absence_penalty' => 0.1,
+        'formula' => null,
+    ];
+
     public function index(Request $request)
     {
         $request->validate([
@@ -159,12 +180,9 @@ class GradeSectionController extends Controller
                     'group_subject_id' => $request->group_subject_id,
                     'period_id' => $request->period_id,
                     'name' => $sectionData['name'],
-                    'short_name' => $sectionData['short_name'] ?? null,
                     'weight' => $sectionData['weight'],
-                    'color' => $sectionData['color'] ?? '#1565C0',
-                    'has_section_final' => $sectionData['has_section_final'] ?? true,
-                    'final_calculation' => $sectionData['final_calculation'] ?? 'weighted_avg',
                     'sort_order' => $sectionIndex,
+                    ...$this->optionalAttributes($sectionData, isset($sectionData['id']), self::SECTION_DEFAULTS),
                 ];
 
                 $section = isset($sectionData['id'])
@@ -178,16 +196,9 @@ class GradeSectionController extends Controller
                         'period_id' => $request->period_id,
                         'column_type' => $columnData['column_type'],
                         'name' => $columnData['name'],
-                        'short_name' => $columnData['short_name'] ?? null,
-                        'description' => $columnData['description'] ?? null,
                         'weight' => $columnData['weight'],
-                        'max_score' => $columnData['max_score'] ?? 10.0,
-                        'date' => $columnData['date'] ?? null,
-                        'attendance_base_score' => $columnData['attendance_base_score'] ?? 10.0,
-                        'absence_penalty' => $columnData['absence_penalty'] ?? 0.5,
-                        'justified_absence_penalty' => $columnData['justified_absence_penalty'] ?? 0.1,
-                        'formula' => $columnData['formula'] ?? null,
                         'sort_order' => $columnIndex,
+                        ...$this->optionalAttributes($columnData, isset($columnData['id']), self::COLUMN_DEFAULTS),
                     ];
 
                     if (isset($columnData['id'])) {
@@ -261,4 +272,26 @@ class GradeSectionController extends Controller
             $calculator->recalculateForStudent($studentId, $groupSubject->id, $periodId);
         }
     }
+
+    /**
+     * Campos opcionales de una sección o columna: al crear, lo que falte toma el
+     * valor por defecto; al actualizar, lo que no venga en la petición se conserva.
+     * Antes se aplicaban los valores por defecto también al actualizar, y cada
+     * guardado de la configuración devolvía todas las columnas a nota máxima 10 y
+     * borraba su fecha y descripción.
+     */
+    private function optionalAttributes(array $data, bool $exists, array $defaults): array
+    {
+        $attributes = [];
+        foreach ($defaults as $key => $default) {
+            if (array_key_exists($key, $data)) {
+                $attributes[$key] = $data[$key] ?? $default;
+            } elseif (! $exists) {
+                $attributes[$key] = $default;
+            }
+        }
+
+        return $attributes;
+    }
+
 }

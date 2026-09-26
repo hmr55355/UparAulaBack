@@ -133,4 +133,36 @@ class BehaviorAnnotationTest extends TestCase
         $response->assertOk()->assertJsonPath('data.parent_contacted', true);
         $this->assertDatabaseHas('behavior_annotations', ['id' => $annotation->id, 'parent_contacted' => true]);
     }
+
+    public function test_only_the_author_or_an_admin_can_edit_or_delete_an_annotation(): void
+    {
+        $annotation = BehaviorAnnotation::create([...$this->payload(), 'registered_by' => $this->teacher->id]);
+
+        $colleague = User::factory()->create();
+        InstitutionTeacher::create([
+            'institution_id' => $this->institution->id, 'user_id' => $colleague->id, 'role' => 'teacher', 'status' => 'active',
+        ]);
+        GroupSubject::create([
+            'group_id' => $this->group->id,
+            'subject_id' => Subject::create(['institution_id' => $this->institution->id, 'name' => 'Español'])->id,
+            'user_id' => $colleague->id, 'institution_id' => $this->institution->id,
+            'academic_year_id' => $this->group->academic_year_id,
+        ]);
+
+        // Un colega del estudiante la ve, pero no la puede cambiar ni borrar.
+        $this->actingAs($colleague, 'sanctum')->putJson("/api/behavior/{$annotation->id}", ['title' => 'Otro'])->assertForbidden();
+        $this->actingAs($colleague, 'sanctum')->deleteJson("/api/behavior/{$annotation->id}")->assertForbidden();
+
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/behavior/{$annotation->id}", [
+            'title' => 'Corregido', 'date' => '2026-02-04',
+        ])->assertOk()->assertJsonPath('data.title', 'Corregido');
+
+        $admin = User::factory()->create();
+        InstitutionTeacher::create([
+            'institution_id' => $this->institution->id, 'user_id' => $admin->id, 'role' => 'admin', 'status' => 'active',
+        ]);
+        $this->actingAs($admin, 'sanctum')->deleteJson("/api/behavior/{$annotation->id}")->assertOk();
+        $this->assertSoftDeleted('behavior_annotations', ['id' => $annotation->id]);
+    }
+
 }

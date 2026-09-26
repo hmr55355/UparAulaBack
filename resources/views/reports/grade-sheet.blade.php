@@ -75,8 +75,11 @@
                     <td class="name-col">{{ $student->last_name }} {{ $student->first_name }}</td>
                     @foreach ($sections as $section)
                         @foreach ($section->columns as $column)
-                            @php $score = $grades->get($column->id)?->score; @endphp
-                            <td @if ($column->column_type !== 'manual') style="background:#EEEEEE" @endif>{{ $score !== null ? number_format($score, 1) : '—' }}</td>
+                            @php
+                                $grade = $grades->get($column->id);
+                                $score = $grade?->score;
+                            @endphp
+                            <td @if ($column->column_type !== 'manual') style="background:#EEEEEE" @endif>{{ $grade?->convention ? $grade->convention->code : ($score !== null ? number_format($score, 1) : '—') }}</td>
                         @endforeach
                         @if ($section->has_section_final)
                             @php $final = $sectionFinals->get($section->id)?->section_final; @endphp

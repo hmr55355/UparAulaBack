@@ -7,6 +7,7 @@ use App\Http\Requests\Grades\BulkGradesRequest;
 use App\Http\Requests\Grades\StoreGradeRequest;
 use App\Models\Grade;
 use App\Models\GradeColumn;
+use App\Models\GradeConvention;
 use App\Models\GradeSection;
 use App\Models\GroupSubject;
 use App\Models\Period;
@@ -69,6 +70,9 @@ class GradeController extends Controller
             'section_finals' => $sectionFinals,
             'period_finals' => $periodFinals,
             'min_passing_grade' => (float) $groupSubject->institution->min_passing_grade,
+            // Convenciones del docente del curso (no de quien abre la planilla).
+            'conventions' => GradeConvention::where('user_id', $groupSubject->user_id)
+                ->orderBy('sort_order')->orderBy('id')->get(),
         ]);
     }
 
@@ -76,7 +80,10 @@ class GradeController extends Controller
     {
         $column = GradeColumn::findOrFail($request->grade_column_id);
         $this->authorizeAndAssertEditable($column);
-        $this->assertScoreWithinRange($request->score, $column);
+        $convention = $this->resolveConvention($request->convention_id, $column);
+        if (! $convention) {
+            $this->assertScoreWithinRange($request->score, $column);
+        }
         $this->assertStudentEnrolled($request->student_id, $column->groupSubject->group_id);
 
         $grade = Grade::updateOrCreate(
@@ -84,7 +91,8 @@ class GradeController extends Controller
             [
                 'group_subject_id' => $column->group_subject_id,
                 'period_id' => $column->period_id,
-                'score' => $request->score,
+                'score' => $convention ? $convention->scoreFor($column) : $request->score,
+                'convention_id' => $convention?->id,
                 'is_excused' => $request->boolean('is_excused'),
                 'excused_reason' => $request->excused_reason,
                 'notes' => $request->notes,
@@ -114,6 +122,9 @@ class GradeController extends Controller
             ->groupBy('group_id')
             ->map(fn ($rows) => $rows->pluck('student_id')->all());
 
+        $conventions = GradeConvention::whereIn('id', collect($request->grades)->pluck('convention_id')->filter()->unique())
+            ->get()->keyBy('id');
+
         $saved = [];
         $affected = collect();
 
@@ -121,10 +132,13 @@ class GradeController extends Controller
         // recalculamos una sola vez por (estudiante, group_subject, período) único
         // al final — evita cascadas de recálculo repetidas si el mismo estudiante
         // aparece en más de una fila (varias columnas guardadas de una vez).
-        Grade::withoutEvents(function () use ($request, $columns, $enrolledByGroup, &$saved, &$affected) {
+        Grade::withoutEvents(function () use ($request, $columns, $conventions, $enrolledByGroup, &$saved, &$affected) {
             foreach ($request->grades as $item) {
                 $column = $columns->get($item['grade_column_id']);
-                $this->assertScoreWithinRange($item['score'] ?? null, $column);
+                $convention = $this->resolveConvention($item['convention_id'] ?? null, $column, $conventions);
+                if (! $convention) {
+                    $this->assertScoreWithinRange($item['score'] ?? null, $column);
+                }
 
                 $groupId = $column->groupSubject->group_id;
                 abort_if(
@@ -138,7 +152,8 @@ class GradeController extends Controller
                     [
                         'group_subject_id' => $column->group_subject_id,
                         'period_id' => $column->period_id,
-                        'score' => $item['score'] ?? null,
+                        'score' => $convention ? $convention->scoreFor($column) : ($item['score'] ?? null),
+                        'convention_id' => $convention?->id,
                         'is_excused' => $item['is_excused'] ?? false,
                         'notes' => $item['notes'] ?? null,
                         'registered_by' => $request->user()->id,
@@ -163,10 +178,14 @@ class GradeController extends Controller
     {
         $column = $grade->gradeColumn;
         $this->authorizeAndAssertEditable($column);
-        $this->assertScoreWithinRange($request->score, $column);
+        $convention = $this->resolveConvention($request->convention_id, $column);
+        if (! $convention) {
+            $this->assertScoreWithinRange($request->score, $column);
+        }
 
         $grade->update([
-            'score' => $request->score,
+            'score' => $convention ? $convention->scoreFor($column) : $request->score,
+            'convention_id' => $convention?->id,
             'is_excused' => $request->boolean('is_excused'),
             'excused_reason' => $request->excused_reason,
             'notes' => $request->notes,
@@ -277,6 +296,26 @@ class GradeController extends Controller
     {
         $this->authorize('update', $column->groupSubject);
         abort_if($column->period->is_closed, 422, 'El período está cerrado. Las notas no se pueden editar.');
+    }
+
+    /**
+     * La convención debe ser del docente del curso (la planilla solo le muestra
+     * esas). Solo aplica a columnas manuales: las calculadas no se digitan.
+     */
+    private function resolveConvention(?int $conventionId, GradeColumn $column, $preloaded = null): ?GradeConvention
+    {
+        if (! $conventionId) {
+            return null;
+        }
+
+        $convention = $preloaded?->get($conventionId) ?? GradeConvention::find($conventionId);
+        abort_if(
+            ! $convention || $convention->user_id !== $column->groupSubject->user_id,
+            422,
+            'Esa convención no pertenece al docente de este curso.'
+        );
+
+        return $convention;
     }
 
     private function assertStudentEnrolled(int $studentId, int $groupId): void

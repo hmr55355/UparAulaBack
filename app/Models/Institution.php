@@ -63,6 +63,12 @@ class Institution extends Model
         return $this->hasMany(Student::class);
     }
 
+    /** Escala de valoración institucional, de la nota más baja a la más alta. */
+    public function performanceLevels(): HasMany
+    {
+        return $this->hasMany(PerformanceLevel::class)->orderBy('min_score');
+    }
+
     public function gradeTemplates(): HasMany
     {
         return $this->hasMany(GradeTemplate::class);

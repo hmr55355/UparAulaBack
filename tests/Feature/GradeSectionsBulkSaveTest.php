@@ -148,4 +148,34 @@ class GradeSectionsBulkSaveTest extends TestCase
 
         $response->assertForbidden();
     }
+
+    public function test_bulk_save_keeps_column_fields_it_did_not_receive_and_saves_the_final_label(): void
+    {
+        $payload = fn (array $column, array $section = []) => [
+            'group_subject_id' => $this->groupSubject->id,
+            'period_id' => $this->period->id,
+            'sections' => [[
+                ...$section,
+                'name' => 'Tareas', 'weight' => 100, 'final_calculation' => 'weighted_avg',
+                'columns' => [['name' => 'Taller', 'column_type' => 'manual', 'weight' => 100, ...$column]],
+            ]],
+        ];
+
+        $saved = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/grade-sections/bulk-save', $payload(
+            ['max_score' => 5, 'description' => 'Ejercicios 1 a 10', 'date' => '2026-02-03'],
+            ['section_final_label' => 'DefT'],
+        ))->assertOk()->json('data.0');
+
+        // Un guardado sin esos campos no los debe devolver a los valores por defecto.
+        $this->actingAs($this->teacher, 'sanctum')->postJson('/api/grade-sections/bulk-save', $payload(
+            ['id' => $saved['columns'][0]['id'], 'name' => 'Taller 1'],
+            ['id' => $saved['id']],
+        ))->assertOk();
+
+        $this->assertDatabaseHas('grade_columns', [
+            'id' => $saved['columns'][0]['id'], 'name' => 'Taller 1', 'max_score' => 5.0, 'description' => 'Ejercicios 1 a 10',
+        ]);
+        $this->assertDatabaseHas('grade_sections', ['id' => $saved['id'], 'section_final_label' => 'DefT']);
+    }
+
 }

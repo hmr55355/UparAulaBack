@@ -16,6 +16,7 @@ use App\Models\Institution;
 use App\Models\Subject;
 use App\Models\Group;
 use App\Models\InstitutionTeacher;
+use App\Services\PerformanceScale;
 use App\Models\Period;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -85,6 +86,10 @@ class InstitutionController extends Controller
             $this->createDefaultPeriods($academicYear);
             // Toda institución arranca con una jornada; el admin puede renombrarla o agregar más.
             $institution->shifts()->create(['name' => 'Jornada única']);
+            // Y con la escala de valoración sugerida; el admin la ajusta a su SIEE.
+            foreach (PerformanceScale::defaultsFor($institution->grading_scale, (float) $institution->min_passing_grade) as $index => $level) {
+                $institution->performanceLevels()->create($level + ['sort_order' => $index]);
+            }
 
             return $institution;
         });
@@ -102,10 +107,10 @@ class InstitutionController extends Controller
             'department' => ['sometimes', 'string', 'max:255'],
             'nit' => ['nullable', 'string', 'max:50'],
             'rector' => ['nullable', 'string', 'max:255'],
-            'grading_scale' => ['sometimes', 'in:1_to_10,1_to_5'],
-            'min_passing_grade' => ['sometimes', 'numeric', 'min:1', 'max:10'],
             'logo' => ['sometimes', 'file', 'image', 'max:2048'],
         ]);
+        // La escala y la nota mínima se cambian solo desde PUT …/performance-levels:
+        // la nota mínima sale de la escala y no deben quedar desincronizadas.
 
         if ($request->hasFile('logo')) {
             if ($institution->logo) {

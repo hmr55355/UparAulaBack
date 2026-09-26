@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CopyChargeController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\GradeColumnController;
 use App\Http\Controllers\Api\GradeController;
+use App\Http\Controllers\Api\GradeConventionController;
 use App\Http\Controllers\Api\GradeExcelController;
 use App\Http\Controllers\Api\CourseMonitorController;
 use App\Http\Controllers\Api\MonitorController;
@@ -25,6 +26,7 @@ use App\Http\Controllers\Api\InstitutionController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ParentCitationController;
 use App\Http\Controllers\Api\ParentController;
+use App\Http\Controllers\Api\PerformanceLevelController;
 use App\Http\Controllers\Api\PeriodController;
 use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\ReportController;
@@ -73,6 +75,9 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
         Route::get('/{institution}/grade-levels', [GradeLevelController::class, 'index']);
         Route::post('/{institution}/grade-levels', [GradeLevelController::class, 'store']);
         Route::get('/{institution}/shifts', [ShiftController::class, 'index']);
+        Route::get('/{institution}/performance-levels', [PerformanceLevelController::class, 'index']);
+        Route::put('/{institution}/performance-levels', [PerformanceLevelController::class, 'update']);
+        Route::get('/{institution}/performance-levels/suggested', [PerformanceLevelController::class, 'suggested']);
         Route::post('/{institution}/shifts', [ShiftController::class, 'store']);
     });
 
@@ -124,6 +129,13 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::put('/grade-templates/{gradeTemplate}', [GradeTemplateController::class, 'update']);
     Route::delete('/grade-templates/{gradeTemplate}', [GradeTemplateController::class, 'destroy']);
     Route::post('/grade-templates/{gradeTemplate}/apply', [GradeTemplateController::class, 'apply']);
+
+    Route::get('/grade-conventions', [GradeConventionController::class, 'index']);
+    Route::post('/grade-conventions', [GradeConventionController::class, 'store']);
+    Route::post('/grade-conventions/suggested', [GradeConventionController::class, 'storeSuggested']);
+    Route::patch('/grade-conventions/reorder', [GradeConventionController::class, 'reorder']);
+    Route::put('/grade-conventions/{gradeConvention}', [GradeConventionController::class, 'update']);
+    Route::delete('/grade-conventions/{gradeConvention}', [GradeConventionController::class, 'destroy']);
 
     Route::post('/grades/bulk', [GradeController::class, 'bulk']);
     Route::get('/grades/excel-template', [GradeExcelController::class, 'template']);

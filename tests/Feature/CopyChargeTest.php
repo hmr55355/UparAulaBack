@@ -177,4 +177,30 @@ class CopyChargeTest extends TestCase
         $this->assertEquals(2, $response->json('data.0.total_students'));
         $this->assertEquals(1000, $response->json('data.0.pending_amount'));
     }
+
+    public function test_changing_the_total_reevaluates_payment_statuses_and_delete_asks_to_confirm(): void
+    {
+        $chargeId = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/copy-charges', [
+            'group_id' => $this->group->id, 'description' => 'Guía', 'quantity' => 10, 'unit_price' => 200,
+            'charge_date' => '2026-02-01',
+        ])->json('data.id');
+        $this->actingAs($this->teacher, 'sanctum')->postJson("/api/copy-charges/{$chargeId}/payments/bulk", [
+            'payments' => [['student_id' => $this->studentA->id, 'status' => 'pagado', 'amount_paid' => 2000]],
+        ])->assertCreated();
+
+        // Sube el total: quien pagó 2.000 ahora tiene pago parcial.
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/copy-charges/{$chargeId}", ['unit_price' => 300])
+            ->assertOk()->assertJsonPath('data.total_amount', '3000.00');
+        $this->assertDatabaseHas('student_copy_payments', [
+            'copy_charge_id' => $chargeId, 'student_id' => $this->studentA->id, 'status' => 'pago_parcial',
+        ]);
+        $this->assertDatabaseHas('student_copy_payments', [
+            'copy_charge_id' => $chargeId, 'student_id' => $this->studentB->id, 'status' => 'debe',
+        ]);
+
+        $this->actingAs($this->teacher, 'sanctum')->deleteJson("/api/copy-charges/{$chargeId}")->assertStatus(409);
+        $this->actingAs($this->teacher, 'sanctum')->deleteJson("/api/copy-charges/{$chargeId}?confirm=1")->assertOk();
+        $this->assertDatabaseMissing('copy_charges', ['id' => $chargeId]);
+    }
+
 }

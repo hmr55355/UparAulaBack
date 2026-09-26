@@ -12,7 +12,7 @@ class Grade extends Model
 
     protected $fillable = [
         'student_id', 'grade_column_id', 'group_subject_id', 'period_id',
-        'score', 'is_excused', 'excused_reason', 'notes', 'registered_by',
+        'score', 'convention_id', 'is_excused', 'excused_reason', 'notes', 'registered_by',
     ];
 
     protected function casts(): array
@@ -41,6 +41,11 @@ class Grade extends Model
     public function period(): BelongsTo
     {
         return $this->belongsTo(Period::class);
+    }
+
+    public function convention(): BelongsTo
+    {
+        return $this->belongsTo(GradeConvention::class, 'convention_id');
     }
 
     public function registeredBy(): BelongsTo

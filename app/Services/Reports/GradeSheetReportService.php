@@ -62,6 +62,7 @@ class GradeSheetReportService
         $gradesByStudent = Grade::where('group_subject_id', $groupSubject->id)
             ->where('period_id', $period->id)
             ->whereIn('student_id', $studentIds)
+            ->with('convention:id,code')
             ->get()
             ->groupBy('student_id');
 
@@ -197,11 +198,15 @@ class GradeSheetReportService
             $colIndex = 2;
             foreach ($columnOrder as $entry) {
                 $col = Coordinate::stringFromColumnIndex($colIndex);
+                $grade = $entry['type'] === 'column' ? $grades->get($entry['id']) : null;
                 $value = $entry['type'] === 'column'
-                    ? $grades->get($entry['id'])?->score
+                    ? $grade?->score
                     : $sectionFinals->get($entry['id'])?->section_final;
 
-                $sheet->setCellValue("{$col}{$row}", $value !== null ? (float) $value : '');
+                // Una nota puesta con convención se imprime con su abreviatura (NP, ✓…).
+                $sheet->setCellValue("{$col}{$row}", $grade?->convention
+                    ? $grade->convention->code
+                    : ($value !== null ? (float) $value : ''));
 
                 if ($entry['type'] === 'section_final' && $value !== null) {
                     $sheet->getStyle("{$col}{$row}")->getFill()->setFillType(Fill::FILL_SOLID)

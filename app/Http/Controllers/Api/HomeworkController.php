@@ -104,14 +104,21 @@ class HomeworkController extends Controller
 
         $homework->update($validated);
 
-        if ($homework->grade_column_id && array_key_exists('title', $validated)) {
-            GradeColumn::where('id', $homework->grade_column_id)->update(['name' => $validated['title']]);
+        // La columna que genera la tarea en la planilla sigue su nombre y su nota máxima.
+        if ($homework->grade_column_id) {
+            $columnChanges = array_filter([
+                'name' => $validated['title'] ?? null,
+                'max_score' => $validated['max_score'] ?? null,
+            ], fn ($value) => $value !== null);
+            if ($columnChanges) {
+                GradeColumn::where('id', $homework->grade_column_id)->update($columnChanges);
+            }
         }
 
         return response()->json(['data' => $homework->fresh()]);
     }
 
-    public function destroy(Request $request, Homework $homework)
+    public function destroy(Request $request, Homework $homework, GradeCalculatorService $calculator)
     {
         $this->authorize('update', $homework->groupSubject);
 
@@ -126,6 +133,13 @@ class HomeworkController extends Controller
             }
 
             GradeColumn::where('id', $homework->grade_column_id)->delete();
+            $homework->delete();
+
+            // Sin esa columna, las definitivas del curso cambian: se recalculan ya,
+            // o quedarían mostrando valores que incluían las notas de la tarea borrada.
+            $calculator->recalculateCourse($homework->group_subject_id, $homework->period_id);
+
+            return response()->json(['message' => 'Tarea eliminada.']);
         }
 
         $homework->delete();
@@ -188,6 +202,7 @@ class HomeworkController extends Controller
                             'group_subject_id' => $homework->group_subject_id,
                             'period_id' => $homework->period_id,
                             'score' => $item['score'],
+                            'convention_id' => null,
                             'registered_by' => $request->user()->id,
                         ]
                     );

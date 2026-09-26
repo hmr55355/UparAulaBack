@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Grade;
 use App\Models\GradeColumn;
+use App\Models\GradeConvention;
 use App\Models\GradeSection;
 use App\Models\GroupSubject;
 use App\Models\Period;
@@ -27,6 +28,8 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  *  - Fila 1 (oculta): claves de máquina — "student_id" en A1 y "col:{id}" sobre cada actividad.
  *  - Fila 2: encabezados visibles (Apellidos, Nombres, "Sección · Actividad").
  *  - Fila 3 en adelante: un estudiante por fila; la columna A (oculta) guarda su id.
+ *  - Si el docente tiene convenciones (NP, ✓…), una segunda hoja las lista y las
+ *    celdas aceptan también esas abreviaturas.
  * Las columnas se ubican por esas claves, no por posición, así que reordenar o
  * borrar columnas en Excel no mezcla notas de una actividad con otra.
  */
@@ -39,6 +42,7 @@ class GradeExcelController extends Controller
 
         $students = $this->students($groupSubject);
         $columns = $this->manualColumns($groupSubject, $period);
+        $conventions = $this->conventions($groupSubject);
 
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
@@ -67,7 +71,9 @@ class GradeExcelController extends Controller
         }
 
         $lastRow = max(3, $students->count() + 2);
-        foreach ($columns->values() as $index => $column) {
+        // Con convenciones las celdas también llevan texto (NP, ✓…): la validación
+        // numérica de Excel las rechazaría, así que solo se pone sin convenciones.
+        foreach ($conventions->isEmpty() ? $columns->values() : [] as $index => $column) {
             $letter = Coordinate::stringFromColumnIndex($index + 4);
             $validation = $sheet->getCell("{$letter}3")->getDataValidation();
             $validation->setType(DataValidation::TYPE_DECIMAL)
@@ -87,6 +93,23 @@ class GradeExcelController extends Controller
         $sheet->getColumnDimension('B')->setWidth(24);
         $sheet->getColumnDimension('C')->setWidth(24);
         $sheet->freezePane('D3');
+
+        if ($conventions->isNotEmpty()) {
+            $legend = $spreadsheet->createSheet();
+            $legend->setTitle('Convenciones');
+            $legend->fromArray(['Escribe', 'Significado', 'Nota'], null, 'A1');
+            foreach ($conventions->values() as $index => $convention) {
+                $legend->fromArray([
+                    $convention->code,
+                    $convention->label,
+                    $convention->value !== null ? (float) $convention->value : 'Sin nota (no cuenta en el promedio)',
+                ], null, 'A'.($index + 2));
+            }
+            $legend->getStyle('A1:C1')->getFont()->setBold(true);
+            $legend->getColumnDimension('B')->setWidth(28);
+            $legend->getColumnDimension('C')->setWidth(36);
+            $spreadsheet->setActiveSheetIndex(0);
+        }
 
         $groupSubject->loadMissing(['group:id,name', 'subject:id,name']);
         $filename = "notas-{$groupSubject->group->name}-{$groupSubject->subject->name}-{$period->name}.xlsx";
@@ -110,6 +133,7 @@ class GradeExcelController extends Controller
             ->toArray(null, true, false, false);
 
         $columns = $this->manualColumns($groupSubject, $period)->keyBy('id');
+        $conventions = $this->conventions($groupSubject);
 
         // Ubicar cada actividad por su clave "col:{id}" de la fila 1.
         $columnIndexes = [];
@@ -131,7 +155,7 @@ class GradeExcelController extends Controller
         $errors = [];
         $affectedStudents = [];
 
-        Grade::withoutEvents(function () use ($rows, $columnIndexes, $enrolled, $request, &$saved, &$skipped, &$errors, &$affectedStudents) {
+        Grade::withoutEvents(function () use ($rows, $columnIndexes, $enrolled, $conventions, $request, &$saved, &$skipped, &$errors, &$affectedStudents) {
             foreach (array_slice($rows, 2, null, true) as $rowIndex => $row) {
                 $excelRow = $rowIndex + 1;
                 $studentId = (int) ($row[0] ?? 0);
@@ -152,10 +176,12 @@ class GradeExcelController extends Controller
                         continue;
                     }
 
+                    $convention = $this->matchConvention($conventions, (string) $raw);
                     $score = is_numeric($raw) ? (float) $raw : (float) str_replace(',', '.', (string) $raw);
                     $isNumeric = is_numeric($raw) || is_numeric(str_replace(',', '.', (string) $raw));
-                    if (! $isNumeric || $score < 1.0 || $score > (float) $column->max_score) {
-                        $errors[] = "Fila {$excelRow}, {$column->name}: \"{$raw}\" no es una nota válida (1.0 a ".(float) $column->max_score.').';
+                    if (! $convention && (! $isNumeric || $score < 1.0 || $score > (float) $column->max_score)) {
+                        $hint = $conventions->isNotEmpty() ? ' ni una de tus convenciones' : '';
+                        $errors[] = "Fila {$excelRow}, {$column->name}: \"{$raw}\" no es una nota válida (1.0 a ".(float) $column->max_score."){$hint}.";
 
                         continue;
                     }
@@ -165,7 +191,8 @@ class GradeExcelController extends Controller
                         [
                             'group_subject_id' => $column->group_subject_id,
                             'period_id' => $column->period_id,
-                            'score' => round($score, 1),
+                            'score' => $convention ? $convention->scoreFor($column) : round($score, 1),
+                            'convention_id' => $convention?->id,
                             'registered_by' => $request->user()->id,
                         ]
                     );
@@ -201,6 +228,20 @@ class GradeExcelController extends Controller
             'studentGroups',
             fn ($q) => $q->where('group_id', $groupSubject->group_id)->where('status', 'activo')
         )->orderBy('last_name')->orderBy('first_name')->get(['id', 'first_name', 'last_name']);
+    }
+
+    private function conventions(GroupSubject $groupSubject): Collection
+    {
+        return GradeConvention::where('user_id', $groupSubject->user_id)->orderBy('sort_order')->orderBy('id')->get();
+    }
+
+    /** Coincidencia exacta primero; si no, sin distinguir mayúsculas ("np" = "NP"). */
+    private function matchConvention(Collection $conventions, string $raw): ?GradeConvention
+    {
+        $raw = trim($raw);
+
+        return $conventions->first(fn ($c) => $c->code === $raw)
+            ?? $conventions->first(fn ($c) => mb_strtolower($c->code) === mb_strtolower($raw));
     }
 
     /** Solo columnas manuales: las calculadas (asistencia, fórmulas) no se digitan. */

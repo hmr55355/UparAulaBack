@@ -12,7 +12,7 @@ antes de tocar el motor de notas, la asistencia o los monitores.
 
 ```bash
 php artisan serve                 # API en http://localhost:8000
-php artisan test                  # 116 pruebas (SQLite en memoria, no toca MySQL)
+php artisan test                  # 127 pruebas (SQLite en memoria, no toca MySQL)
 php artisan migrate               # nunca migrate:fresh sin permiso explícito
 php artisan queue:work            # obligatorio para que los reportes terminen
 ```
@@ -25,6 +25,10 @@ pídele al usuario que la inicie en vez de adivinar comandos.
 - **Notas**: `GradeCalculatorService` calcula columnas (`manual`, `from_attendance`,
   `from_participation`, `custom_formula`), definitivas de sección y de período.
   `GradeObserver`/`AttendanceObserver` disparan el recálculo solo.
+- **Convenciones** (`grade_conventions`, por docente): NP, ✓… con nota opcional.
+  `grades.convention_id` + `score` = valor de la convención (null = no cuenta en el
+  promedio). La planilla usa las del docente del curso; cambiar el valor de una
+  convención reescribe las notas que la usan y recalcula.
 - **Estructura académica**: `grade_levels` (grados), `shifts` (jornadas),
   `class_blocks` (bloques y descansos por jornada). Los grupos apuntan a un grado
   y una jornada; las materias se vinculan a grados (`grade_level_subject`).
@@ -59,3 +63,11 @@ Backend en `https://uparaulaback.upartechnology.com`. Despliegue: subir código,
 respaldar la base y `php artisan migrate --force` (nunca `fresh`/`refresh`).
 `FRONTEND_URL` del `.env` controla CORS. `SANCTUM_STATEFUL_DOMAINS` no se usa:
 la autenticación es por token, `statefulApi()` nunca se registra.
+
+## Pendiente
+
+El plan de trabajo único (lo que la base guarda y la app no deja crear ni editar)
+está en `FrontUparAula/CLAUDE.md`. Las tareas de backend son la Fase 3 (endpoints
+de estudiantes, matrícula, acudientes y año escolar) y la Fase 4: proteger
+`DELETE /groups/{id}`, que hoy borra en cascada notas, matrículas y demás datos del
+grupo sin ninguna validación.

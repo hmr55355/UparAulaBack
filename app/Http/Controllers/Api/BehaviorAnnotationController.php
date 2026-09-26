@@ -29,6 +29,7 @@ class BehaviorAnnotationController extends Controller
             ->when($request->studentId, fn ($q, $studentId) => $q->where('student_id', $studentId))
             ->when($request->date, fn ($q, $date) => $q->whereDate('date', $date))
             ->with(['student:id,first_name,last_name', 'registeredBy:id,name'])
+            ->withCount('citations')
             ->orderByDesc('date')
             ->get()
             ->map(fn (BehaviorAnnotation $a) => $this->withTeacherName($a));
@@ -64,9 +65,10 @@ class BehaviorAnnotationController extends Controller
 
     public function update(Request $request, BehaviorAnnotation $behaviorAnnotation)
     {
-        abort_unless($behaviorAnnotation->student->canBeAccessedBy($request->user()), 403);
+        $this->authorizeOwnerOrAdmin($request->user(), $behaviorAnnotation);
 
         $validated = $request->validate([
+            'date' => ['sometimes', 'date'],
             'type' => ['sometimes', 'in:positiva,negativa,informativa,acuerdo'],
             'category' => ['sometimes', 'in:academico,convivencia,puntualidad,presentacion,participacion,actitud,otro'],
             'title' => ['sometimes', 'string', 'max:80'],
@@ -82,7 +84,7 @@ class BehaviorAnnotationController extends Controller
 
     public function destroy(Request $request, BehaviorAnnotation $behaviorAnnotation)
     {
-        abort_unless($behaviorAnnotation->student->canBeAccessedBy($request->user()), 403);
+        $this->authorizeOwnerOrAdmin($request->user(), $behaviorAnnotation);
 
         $behaviorAnnotation->delete();
 
@@ -115,6 +117,19 @@ class BehaviorAnnotationController extends Controller
             'action_taken' => ['nullable', 'string'],
             'requires_parent_contact' => ['sometimes', 'boolean'],
         ]);
+    }
+
+    /**
+     * Ver una anotación lo puede cualquier docente del estudiante; editarla o
+     * borrarla, solo quien la registró o un administrador de la institución.
+     */
+    private function authorizeOwnerOrAdmin(\App\Models\User $user, BehaviorAnnotation $annotation): void
+    {
+        abort_unless(
+            (int) $annotation->registered_by === (int) $user->id || $user->isAdminOf($annotation->group->institution_id),
+            403,
+            'Solo quien registró la anotación o un administrador puede modificarla.'
+        );
     }
 
     private function authorizeGroupAccess(\App\Models\User $user, Group $group): void

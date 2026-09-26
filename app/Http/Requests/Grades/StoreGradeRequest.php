@@ -17,6 +17,7 @@ class StoreGradeRequest extends FormRequest
             'student_id' => ['required', 'integer', 'exists:students,id'],
             'grade_column_id' => ['required', 'integer', 'exists:grade_columns,id'],
             'score' => ['nullable', 'numeric', 'min:1'],
+            'convention_id' => ['nullable', 'integer', 'exists:grade_conventions,id'],
             'is_excused' => ['sometimes', 'boolean'],
             'excused_reason' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
