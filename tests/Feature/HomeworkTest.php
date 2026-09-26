@@ -180,4 +180,23 @@ class HomeworkTest extends TestCase
         $this->assertNull($finalOf());
     }
 
+
+    public function test_automatic_weight_splits_the_section_equally_among_its_columns(): void
+    {
+        $existing = \App\Models\GradeColumn::create([
+            'grade_section_id' => $this->section->id, 'group_subject_id' => $this->groupSubject->id,
+            'period_id' => $this->period->id, 'column_type' => 'manual', 'name' => 'Taller 1', 'weight' => 100, 'sort_order' => 0,
+        ]);
+
+        $columnId = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/homeworks', [
+            'group_subject_id' => $this->groupSubject->id, 'period_id' => $this->period->id,
+            'title' => 'Taller 2', 'assigned_date' => '2026-02-01', 'due_date' => '2026-02-08',
+            'is_graded' => true, 'grade_section_id' => $this->section->id, 'weight_mode' => 'automatic',
+            'notes' => 'Revisar en clase',
+        ])->assertCreated()->assertJsonPath('data.notes', 'Revisar en clase')->json('data.grade_column_id');
+
+        $this->assertDatabaseHas('grade_columns', ['id' => $existing->id, 'weight' => 50]);
+        $this->assertDatabaseHas('grade_columns', ['id' => $columnId, 'weight' => 50, 'max_score' => 10]);
+    }
+
 }

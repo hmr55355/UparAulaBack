@@ -27,21 +27,28 @@
 
     <h2>Notas por materia</h2>
     <table>
-        <thead><tr><th>Materia</th><th>Definitiva del período</th><th>Estado</th></tr></thead>
+        <thead><tr><th>Materia</th><th>Definitiva del período</th><th>Desempeño</th><th>Escala nacional</th></tr></thead>
         <tbody>
             @forelse ($grades as $g)
                 <tr>
                     <td>{{ $g['subject'] }}</td>
-                    <td>{{ $g['period_final'] !== null ? number_format((float) $g['period_final'], 1) : '—' }}</td>
-                    <td class="{{ $g['is_promoted'] === true ? 'promoted' : ($g['is_promoted'] === false ? 'not-promoted' : '') }}">
-                        {{ $g['is_promoted'] === true ? 'Aprobado' : ($g['is_promoted'] === false ? 'Reprobado' : '—') }}
-                    </td>
+                    <td @if ($g['color']) style="background:#{{ $g['color'] }}" @endif>{{ $g['period_final'] !== null ? number_format((float) $g['period_final'], 1) : '—' }}</td>
+                    <td>{{ $g['level_name'] ?? '—' }}</td>
+                    <td>{{ $g['national_level'] ?? '—' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="3">Sin materias registradas para este grupo.</td></tr>
+                <tr><td colspan="4">Sin materias registradas para este grupo.</td></tr>
             @endforelse
         </tbody>
     </table>
+    @if ($levels->isNotEmpty())
+        <p class="meta">
+            Escala de valoración institucional:
+            @foreach ($levels as $level)
+                {{ $level->name }} {{ number_format((float) $level->min_score, 1) }}–{{ number_format((float) $level->max_score, 1) }} ({{ $nationalLabels[$level->national_level] }})@if (! $loop->last); @endif
+            @endforeach
+        </p>
+    @endif
 
     <h2>Asistencia del período</h2>
     <table>

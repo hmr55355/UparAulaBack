@@ -12,7 +12,7 @@ antes de tocar el motor de notas, la asistencia o los monitores.
 
 ```bash
 php artisan serve                 # API en http://localhost:8000
-php artisan test                  # 127 pruebas (SQLite en memoria, no toca MySQL)
+php artisan test                  # 132 pruebas (SQLite en memoria, no toca MySQL)
 php artisan migrate               # nunca migrate:fresh sin permiso explícito
 php artisan queue:work            # obligatorio para que los reportes terminen
 ```
@@ -29,6 +29,12 @@ pídele al usuario que la inicie en vez de adivinar comandos.
   `grades.convention_id` + `score` = valor de la convención (null = no cuenta en el
   promedio). La planilla usa las del docente del curso; cambiar el valor de una
   convención reescribe las notas que la usan y recalcula.
+- **Escala de valoración** (`performance_levels`, por institución): niveles con
+  rango, equivalencia nacional (bajo/basico/alto/superior, Decreto 1290 de 2009
+  art. 5) y color. `PerformanceScale` (servicio) da la escala sugerida, el nivel de
+  una nota y el color aclarado para Excel/PDF. `min_passing_grade` se deriva de la
+  escala (inicio del primer nivel que no es Bajo) y solo cambia por
+  `PUT /institutions/{id}/performance-levels`.
 - **Estructura académica**: `grade_levels` (grados), `shifts` (jornadas),
   `class_blocks` (bloques y descansos por jornada). Los grupos apuntan a un grado
   y una jornada; las materias se vinculan a grados (`grade_level_subject`).

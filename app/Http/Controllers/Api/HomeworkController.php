@@ -11,7 +11,9 @@ use App\Models\Homework;
 use App\Models\HomeworkDelivery;
 use App\Models\Student;
 use App\Services\GradeCalculatorService;
+use App\Services\PerformanceScale;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class HomeworkController extends Controller
 {
@@ -37,7 +39,7 @@ class HomeworkController extends Controller
         return response()->json(['data' => $homeworks]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, GradeCalculatorService $calculator)
     {
         $validated = $request->validate([
             'group_subject_id' => ['required', 'integer', 'exists:group_subjects,id'],
@@ -49,12 +51,20 @@ class HomeworkController extends Controller
             'max_score' => ['sometimes', 'numeric', 'min:1'],
             'is_graded' => ['sometimes', 'boolean'],
             'grade_section_id' => ['required_if:is_graded,true', 'integer', 'exists:grade_sections,id'],
-            'weight' => ['required_if:is_graded,true', 'numeric', 'min:0', 'max:100'],
+            // automatic: la columna nueva y las que ya tiene la sección quedan con el mismo peso.
+            'weight_mode' => ['sometimes', Rule::in(['manual', 'automatic'])],
+            'weight' => [
+                Rule::requiredIf(fn () => $request->boolean('is_graded') && $request->input('weight_mode', 'manual') === 'manual'),
+                'nullable', 'numeric', 'min:0', 'max:100',
+            ],
+            'notes' => ['nullable', 'string'],
         ]);
 
         $groupSubject = GroupSubject::findOrFail($validated['group_subject_id']);
         $this->authorize('update', $groupSubject);
 
+        $maxScore = $validated['max_score'] ?? PerformanceScale::maxForInstitution($groupSubject->institution);
+        $automaticWeight = ($validated['weight_mode'] ?? 'manual') === 'automatic';
         $gradeColumnId = null;
 
         if ($validated['is_graded'] ?? false) {
@@ -67,10 +77,15 @@ class HomeworkController extends Controller
                 'period_id' => $section->period_id,
                 'column_type' => 'manual',
                 'name' => $validated['title'],
-                'weight' => $validated['weight'],
-                'max_score' => $validated['max_score'] ?? 10.0,
+                'weight' => $automaticWeight ? 0 : $validated['weight'],
+                'max_score' => $maxScore,
                 'sort_order' => $section->columns()->count(),
             ])->id;
+
+            if ($automaticWeight) {
+                $this->distributeWeightsEqually($section);
+                $calculator->recalculateCourse($groupSubject->id, $section->period_id);
+            }
         }
 
         $homework = Homework::create([
@@ -81,9 +96,10 @@ class HomeworkController extends Controller
             'description' => $validated['description'] ?? null,
             'assigned_date' => $validated['assigned_date'],
             'due_date' => $validated['due_date'],
-            'max_score' => $validated['max_score'] ?? 10.0,
+            'max_score' => $maxScore,
             'is_graded' => $validated['is_graded'] ?? false,
             'grade_column_id' => $gradeColumnId,
+            'notes' => $validated['notes'] ?? null,
         ]);
 
         return response()->json(['data' => $homework], 201);
@@ -219,4 +235,25 @@ class HomeworkController extends Controller
 
         return response()->json(['data' => $saved, 'count' => $saved->count()], 201);
     }
+
+    /**
+     * Reparte el 100 % por igual entre las columnas de la sección, con un decimal;
+     * la última absorbe el redondeo para que la suma sea exactamente 100 (lo mismo
+     * que hace el modo "Automático" de Configurar planilla).
+     */
+    private function distributeWeightsEqually(GradeSection $section): void
+    {
+        $columns = $section->columns()->orderBy('sort_order')->get();
+        $count = $columns->count();
+        if ($count === 0) {
+            return;
+        }
+
+        $share = floor(1000 / $count) / 10;
+        $columns->each(function (GradeColumn $column, int $index) use ($count, $share) {
+            $weight = $index === $count - 1 ? round(100 - $share * ($count - 1), 1) : $share;
+            $column->update(['weight' => $weight]);
+        });
+    }
+
 }

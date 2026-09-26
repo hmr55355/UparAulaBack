@@ -11,6 +11,7 @@ use App\Models\Report;
 use App\Models\Student;
 use App\Models\StudentGroup;
 use App\Models\StudentObservation;
+use App\Services\PerformanceScale;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -39,16 +40,24 @@ class StudentBulletinReportService
             ? GroupSubject::where('group_id', $studentGroup->group_id)->where('is_active', true)->with('subject')->get()
             : collect();
 
-        $grades = $groupSubjects->map(function (GroupSubject $gs) use ($student, $period) {
+        // Cada definitiva con su nivel institucional y su equivalencia en la escala
+        // nacional (Decreto 1290 de 2009, art. 5): es lo que permite leer el boletín
+        // en otro colegio si el estudiante se traslada.
+        $levels = $student->institution->performanceLevels()->get();
+        $grades = $groupSubjects->map(function (GroupSubject $gs) use ($student, $period, $levels) {
             $periodFinal = PeriodFinal::where('student_id', $student->id)
                 ->where('group_subject_id', $gs->id)
                 ->where('period_id', $period->id)
                 ->first();
+            $value = $periodFinal?->period_final !== null ? (float) $periodFinal->period_final : null;
+            $level = PerformanceScale::levelFor($levels, $value);
 
             return [
                 'subject' => $gs->subject->name,
-                'period_final' => $periodFinal->period_final ?? null,
-                'is_promoted' => $periodFinal->is_promoted ?? null,
+                'period_final' => $value,
+                'level_name' => $level?->name,
+                'national_level' => $level ? PerformanceScale::NATIONAL_LABELS[$level->national_level] : null,
+                'color' => $level ? PerformanceScale::tint($level->color) : null,
             ];
         });
 
@@ -79,6 +88,8 @@ class StudentBulletinReportService
             'period' => $period,
             'group' => $studentGroup?->group,
             'grades' => $grades,
+            'levels' => $levels,
+            'nationalLabels' => PerformanceScale::NATIONAL_LABELS,
             'attendanceCounts' => $attendanceCounts,
             'behaviorCounts' => $behaviorCounts,
             'observations' => $observations,

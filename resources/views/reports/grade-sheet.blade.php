@@ -1,13 +1,5 @@
 @php
-    $red = 'FFCDD2';
-    $yellow = 'FFF9C4';
-    $green = 'C8E6C9';
-    $colorFor = function (?float $value) use ($minPassing, $red, $yellow, $green) {
-        if ($value === null) return null;
-        if ($value < $minPassing) return $red;
-        if ($value < $minPassing + 2) return $yellow;
-        return $green;
-    };
+    // $colorFor lo pasa GradeSheetReportService: color del nivel de la escala institucional.
     $periodFinalValues = [];
     foreach ($students as $student) {
         $pf = $periodFinalsByStudent->get($student->id)?->period_final;

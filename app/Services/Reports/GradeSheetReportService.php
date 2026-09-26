@@ -11,6 +11,7 @@ use App\Models\Report;
 use App\Models\SectionFinal;
 use App\Models\Student;
 use App\Models\StudentGroup;
+use App\Services\PerformanceScale;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -30,11 +31,8 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  */
 class GradeSheetReportService
 {
-    private const RED = 'FFCDD2';
-
-    private const YELLOW = 'FFF9C4';
-
-    private const GREEN = 'C8E6C9';
+    /** Niveles de la escala de valoración de la institución (colores de las celdas). */
+    private $levels;
 
     public function generate(Report $report): string
     {
@@ -44,6 +42,7 @@ class GradeSheetReportService
         $period = Period::findOrFail($params['period_id']);
         $institution = $groupSubject->institution;
         $minPassing = (float) $institution->min_passing_grade;
+        $this->levels = $institution->performanceLevels()->get();
 
         $sections = GradeSection::where('group_subject_id', $groupSubject->id)
             ->where('period_id', $period->id)
@@ -86,6 +85,7 @@ class GradeSheetReportService
             'groupSubject' => $groupSubject,
             'period' => $period,
             'minPassing' => $minPassing,
+            'colorFor' => fn (?float $value) => $value === null ? null : $this->colorFor($value, $minPassing),
             'sections' => $sections,
             'students' => $students,
             'gradesByStudent' => $gradesByStudent,
@@ -261,15 +261,16 @@ class GradeSheetReportService
         (new Xlsx($spreadsheet))->save($absolutePath);
     }
 
+    /**
+     * Fondo de la celda: el color del nivel de la escala institucional, aclarado.
+     * Sin escala (no debería pasar) cae al rojo/verde de antes según la nota mínima.
+     */
     private function colorFor(float $value, float $minPassing): string
     {
-        if ($value < $minPassing) {
-            return self::RED;
-        }
-        if ($value < $minPassing + 2) {
-            return self::YELLOW;
-        }
+        $level = PerformanceScale::levelFor($this->levels ?? collect(), $value);
 
-        return self::GREEN;
+        return $level
+            ? PerformanceScale::tint($level->color)
+            : ($value < $minPassing ? 'FFCDD2' : 'C8E6C9');
     }
 }

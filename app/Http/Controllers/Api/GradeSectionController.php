@@ -11,6 +11,7 @@ use App\Models\GroupSubject;
 use App\Models\Period;
 use App\Models\StudentGroup;
 use App\Services\GradeCalculatorService;
+use App\Services\PerformanceScale;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -171,9 +172,13 @@ class GradeSectionController extends Controller
             ], 409);
         }
 
-        DB::transaction(function () use ($request, $sectionsToDelete, $columnsToDelete) {
+        DB::transaction(function () use ($request, $groupSubject, $sectionsToDelete, $columnsToDelete) {
             $columnsToDelete->each->delete();
             $sectionsToDelete->each->delete();
+
+            // Las columnas nuevas toman la nota máxima de la escala de la institución (5.0 o 10.0).
+            $scaleMax = PerformanceScale::maxForInstitution($groupSubject->institution);
+            $columnDefaults = [...self::COLUMN_DEFAULTS, 'max_score' => $scaleMax, 'attendance_base_score' => $scaleMax];
 
             foreach ($request->sections as $sectionIndex => $sectionData) {
                 $sectionAttributes = [
@@ -198,7 +203,7 @@ class GradeSectionController extends Controller
                         'name' => $columnData['name'],
                         'weight' => $columnData['weight'],
                         'sort_order' => $columnIndex,
-                        ...$this->optionalAttributes($columnData, isset($columnData['id']), self::COLUMN_DEFAULTS),
+                        ...$this->optionalAttributes($columnData, isset($columnData['id']), $columnDefaults),
                     ];
 
                     if (isset($columnData['id'])) {
