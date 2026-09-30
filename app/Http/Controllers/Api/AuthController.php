@@ -9,6 +9,7 @@ use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -79,14 +80,28 @@ class AuthController extends Controller
 
         $user->fill($request->only(['name', 'email', 'phone']));
 
-        if ($request->hasFile('avatar')) {
-            $path = $request->file('avatar')->store("private/avatars/{$user->id}", 'local');
-            $user->avatar = $path;
+        // La foto anterior se borra al reemplazarla o quitarla (antes quedaban huérfanas en disco).
+        if ($request->hasFile('avatar') || $request->boolean('remove_avatar')) {
+            if ($user->avatar) {
+                Storage::disk('local')->delete($user->avatar);
+            }
+            $user->avatar = $request->hasFile('avatar')
+                ? $request->file('avatar')->store("private/avatars/{$user->id}", 'local')
+                : null;
         }
 
         $user->save();
 
         return new UserResource($user);
+    }
+
+    /** Foto de perfil del usuario autenticado (disco privado, igual que el logo institucional). */
+    public function avatar(Request $request)
+    {
+        $path = $request->user()->avatar;
+        abort_unless($path && Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->response($path);
     }
 
     public function updateNotificationPreferences(Request $request)

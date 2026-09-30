@@ -219,6 +219,10 @@ class InstitutionController extends Controller
             ->where('user_id', $userId)
             ->firstOrFail();
 
+        if ($request->role !== 'admin') {
+            $this->assertNotLastAdmin($institution, $membership, 'No puedes quitarle el rol de administrador: es el único de la institución.');
+        }
+
         $membership->update(['role' => $request->role]);
 
         Log::info('AUDIT: institution_teacher role changed', [
@@ -238,6 +242,8 @@ class InstitutionController extends Controller
         $membership = InstitutionTeacher::where('institution_id', $institution->id)
             ->where('user_id', $userId)
             ->firstOrFail();
+
+        $this->assertNotLastAdmin($institution, $membership, 'No puedes remover al único administrador de la institución.');
 
         $membership->delete();
 
@@ -381,6 +387,17 @@ class InstitutionController extends Controller
             ->delete();
 
         return response()->json(['message' => 'Asignación removida.']);
+    }
+
+    /** La institución nunca debe quedar sin administrador activo (nadie podría gestionarla). */
+    private function assertNotLastAdmin(Institution $institution, InstitutionTeacher $membership, string $message): void
+    {
+        if ($membership->role !== 'admin' || $membership->status !== 'active') {
+            return;
+        }
+        $admins = InstitutionTeacher::where('institution_id', $institution->id)
+            ->where('role', 'admin')->where('status', 'active')->count();
+        abort_if($admins <= 1, 422, $message);
     }
 
     private function createDefaultPeriods(AcademicYear $academicYear): void

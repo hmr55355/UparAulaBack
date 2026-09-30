@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Grade;
 use App\Models\GradeColumn;
 use App\Models\GradeSection;
+use App\Models\Homework;
+use App\Services\GradeCalculatorService;
+use App\Services\PerformanceScale;
 use Illuminate\Http\Request;
 
 class GradeColumnController extends Controller
@@ -22,21 +25,35 @@ class GradeColumnController extends Controller
         return response()->json(['data' => $columns]);
     }
 
-    public function store(Request $request)
+    /**
+     * Agrega una columna a una sección (también desde la planilla, sin pasar por
+     * Configurar planilla). Con weight_mode=automatic la sección queda repartida
+     * por igual; en ambos casos se recalculan las definitivas del curso.
+     */
+    public function store(Request $request, GradeCalculatorService $calculator)
     {
-        $validated = $this->validatePayload($request);
+        $automatic = $request->input('weight_mode') === 'automatic';
+        $validated = $this->validatePayload($request, weightRequired: ! $automatic);
+        $request->validate(['weight_mode' => ['sometimes', 'in:manual,automatic']]);
 
-        $section = GradeSection::findOrFail($validated['grade_section_id']);
+        $section = GradeSection::with('groupSubject.institution')->findOrFail($validated['grade_section_id']);
         $this->authorize('update', $section->groupSubject);
         $this->assertPeriodOpen($section);
 
         $validated['group_subject_id'] = $section->group_subject_id;
         $validated['period_id'] = $section->period_id;
         $validated['sort_order'] = $section->columns()->count();
+        $validated['weight'] = $automatic ? 0 : $validated['weight'];
+        $validated['max_score'] ??= PerformanceScale::maxForInstitution($section->groupSubject->institution);
 
         $column = GradeColumn::create($validated);
 
-        return response()->json(['data' => $column], 201);
+        if ($automatic) {
+            $section->distributeWeightsEqually();
+        }
+        $calculator->recalculateCourse($section->group_subject_id, $section->period_id);
+
+        return response()->json(['data' => $column->fresh()], 201);
     }
 
     public function update(Request $request, GradeColumn $gradeColumn)
@@ -47,6 +64,12 @@ class GradeColumnController extends Controller
 
         $validated = $this->validatePayload($request, partial: true);
         $gradeColumn->update($validated);
+
+        // Si la columna la generó una tarea, la tarea toma el nombre nuevo (al revés
+        // ya pasaba: editar la tarea renombra su columna).
+        if (array_key_exists('name', $validated)) {
+            Homework::where('grade_column_id', $gradeColumn->id)->update(['title' => $validated['name']]);
+        }
 
         return response()->json(['data' => $gradeColumn]);
     }
@@ -84,7 +107,7 @@ class GradeColumnController extends Controller
         return response()->json(['message' => 'Orden actualizado.']);
     }
 
-    private function validatePayload(Request $request, bool $partial = false): array
+    private function validatePayload(Request $request, bool $partial = false, bool $weightRequired = true): array
     {
         $required = $partial ? 'sometimes' : 'required';
 
@@ -94,7 +117,7 @@ class GradeColumnController extends Controller
             'name' => [$required, 'string', 'max:255'],
             'short_name' => ['nullable', 'string', 'max:8'],
             'description' => ['nullable', 'string'],
-            'weight' => [$required, 'numeric', 'min:0', 'max:100'],
+            'weight' => [$weightRequired ? $required : 'nullable', 'numeric', 'min:0', 'max:100'],
             'max_score' => ['sometimes', 'numeric', 'min:1'],
             'date' => ['nullable', 'date'],
             'attendance_base_score' => ['sometimes', 'numeric'],

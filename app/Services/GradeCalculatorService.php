@@ -238,6 +238,13 @@ class GradeCalculatorService
             $sectionFinal = max(1.0, min(10.0, $sectionFinal));
         }
 
+        // Una definitiva ajustada a mano por el docente no la pisa el recálculo
+        // (antes cualquier nota nueva del estudiante borraba el ajuste sin avisar).
+        $existing = SectionFinal::where('student_id', $studentId)->where('grade_section_id', $gradeSectionId)->first();
+        if ($existing?->manually_adjusted) {
+            return $existing;
+        }
+
         return SectionFinal::updateOrCreate(
             ['student_id' => $studentId, 'grade_section_id' => $gradeSectionId],
             [
@@ -282,6 +289,15 @@ class GradeCalculatorService
 
         $groupSubject ??= GroupSubject::with('institution')->find($groupSubjectId);
         $minPassing = optional($groupSubject?->institution)->min_passing_grade ?? 6.0;
+
+        // Igual que en la sección: la Def Total ajustada a mano se respeta.
+        $existing = PeriodFinal::where('student_id', $studentId)
+            ->where('group_subject_id', $groupSubjectId)
+            ->where('period_id', $periodId)
+            ->first();
+        if ($existing?->manually_adjusted) {
+            return $existing;
+        }
 
         return PeriodFinal::updateOrCreate(
             ['student_id' => $studentId, 'group_subject_id' => $groupSubjectId, 'period_id' => $periodId],

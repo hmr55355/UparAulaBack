@@ -80,7 +80,9 @@ class GradeConventionController extends Controller
         if ($valueChanged) {
             $affected = [];
             Grade::withoutEvents(function () use ($gradeConvention, &$affected) {
-                $gradeConvention->grades()->with('gradeColumn')->get()->each(function (Grade $grade) use ($gradeConvention, &$affected) {
+                // Las notas de períodos cerrados conservan el valor con que se cerraron.
+                $gradeConvention->grades()->whereHas('period', fn ($q) => $q->where('is_closed', false))
+                    ->with('gradeColumn')->get()->each(function (Grade $grade) use ($gradeConvention, &$affected) {
                     $grade->update(['score' => $gradeConvention->scoreFor($grade->gradeColumn)]);
                     $affected["{$grade->student_id}:{$grade->group_subject_id}:{$grade->period_id}"] =
                         [$grade->student_id, $grade->group_subject_id, $grade->period_id];

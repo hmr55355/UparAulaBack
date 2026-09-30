@@ -29,6 +29,10 @@ class ParentController extends Controller
             'phone' => ['required', 'string', 'max:30'],
             'phone_alt' => ['nullable', 'string', 'max:30'],
             'email' => ['nullable', 'email'],
+            'document_number' => ['nullable', 'string', 'max:30'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'occupation' => ['nullable', 'string', 'max:255'],
+            'is_primary_contact' => ['sometimes', 'boolean'],
             'is_primary' => ['sometimes', 'boolean'],
         ]);
 
@@ -43,6 +47,10 @@ class ParentController extends Controller
             'phone' => $validated['phone'],
             'phone_alt' => $validated['phone_alt'] ?? null,
             'email' => $validated['email'] ?? null,
+            'document_number' => $validated['document_number'] ?? null,
+            'address' => $validated['address'] ?? null,
+            'occupation' => $validated['occupation'] ?? null,
+            'is_primary_contact' => $validated['is_primary_contact'] ?? ($validated['is_primary'] ?? false),
         ]);
 
         $student->parents()->attach($parent->id, ['is_primary' => $validated['is_primary'] ?? false]);
@@ -64,6 +72,10 @@ class ParentController extends Controller
             'phone' => ['sometimes', 'string', 'max:30'],
             'phone_alt' => ['nullable', 'string', 'max:30'],
             'email' => ['nullable', 'email'],
+            'document_number' => ['nullable', 'string', 'max:30'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'occupation' => ['nullable', 'string', 'max:255'],
+            'is_primary_contact' => ['sometimes', 'boolean'],
         ]);
 
         $parent->update($validated);

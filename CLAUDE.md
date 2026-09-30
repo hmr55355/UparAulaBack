@@ -12,7 +12,7 @@ antes de tocar el motor de notas, la asistencia o los monitores.
 
 ```bash
 php artisan serve                 # API en http://localhost:8000
-php artisan test                  # 132 pruebas (SQLite en memoria, no toca MySQL)
+php artisan test                  # 145 pruebas (SQLite en memoria, no toca MySQL)
 php artisan migrate               # nunca migrate:fresh sin permiso explícito
 php artisan queue:work            # obligatorio para que los reportes terminen
 ```
@@ -73,7 +73,5 @@ la autenticación es por token, `statefulApi()` nunca se registra.
 ## Pendiente
 
 El plan de trabajo único (lo que la base guarda y la app no deja crear ni editar)
-está en `FrontUparAula/CLAUDE.md`. Las tareas de backend son la Fase 3 (endpoints
-de estudiantes, matrícula, acudientes y año escolar) y la Fase 4: proteger
-`DELETE /groups/{id}`, que hoy borra en cascada notas, matrículas y demás datos del
-grupo sin ninguna validación.
+está en `FrontUparAula/CLAUDE.md`. Fases 1 a 4 hechas; queda la Fase 5 (decisiones
+pendientes con el usuario).

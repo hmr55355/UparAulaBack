@@ -53,6 +53,12 @@ class GradeLevelController extends Controller
 
         $gradeLevel->update($validated);
 
+        // groups.grade_level (texto heredado que usan reportes y exportes) sigue al grado:
+        // su número, o su nombre si no tiene número (mismo criterio que GroupController).
+        $gradeLevel->groups()->update([
+            'grade_level' => $gradeLevel->level !== null ? (string) $gradeLevel->level : $gradeLevel->name,
+        ]);
+
         return response()->json(['data' => $gradeLevel]);
     }
 

@@ -235,9 +235,10 @@ class GradeController extends Controller
         return response()->json(['message' => 'Definitivas de sección recalculadas.']);
     }
 
-    public function adjustSectionFinal(Request $request, SectionFinal $sectionFinal)
+    public function adjustSectionFinal(Request $request, SectionFinal $sectionFinal, GradeCalculatorService $calculator)
     {
         $this->authorize('update', $sectionFinal->groupSubject);
+        $this->assertPeriodIsOpen($sectionFinal->period_id);
 
         $validated = $request->validate([
             'section_final' => ['required', 'numeric', 'min:1'],
@@ -250,6 +251,9 @@ class GradeController extends Controller
             'adjustment_reason' => $validated['adjustment_reason'],
             'calculated_at' => now(),
         ]);
+
+        // La Def Total se recalcula con el valor ajustado (salvo que también esté ajustada a mano).
+        $calculator->recalculatePeriodFinal($sectionFinal->student_id, $sectionFinal->group_subject_id, $sectionFinal->period_id);
 
         return response()->json(['data' => $sectionFinal]);
     }
@@ -276,6 +280,7 @@ class GradeController extends Controller
     public function adjustPeriodFinal(Request $request, PeriodFinal $periodFinal)
     {
         $this->authorize('update', $periodFinal->groupSubject);
+        $this->assertPeriodIsOpen($periodFinal->period_id);
 
         $validated = $request->validate([
             'period_final' => ['required', 'numeric', 'min:1'],
@@ -290,6 +295,35 @@ class GradeController extends Controller
         ]);
 
         return response()->json(['data' => $periodFinal]);
+    }
+
+    /** Quita el ajuste manual: la definitiva vuelve al valor calculado (y la Def Total se recalcula). */
+    public function clearSectionAdjustment(SectionFinal $sectionFinal, GradeCalculatorService $calculator)
+    {
+        $this->authorize('update', $sectionFinal->groupSubject);
+        $this->assertPeriodIsOpen($sectionFinal->period_id);
+
+        $sectionFinal->update(['manually_adjusted' => false, 'adjustment_reason' => null]);
+        $fresh = $calculator->recalculateSectionFinal($sectionFinal->student_id, $sectionFinal->grade_section_id);
+        $calculator->recalculatePeriodFinal($sectionFinal->student_id, $sectionFinal->group_subject_id, $sectionFinal->period_id);
+
+        return response()->json(['data' => $fresh]);
+    }
+
+    public function clearPeriodAdjustment(PeriodFinal $periodFinal, GradeCalculatorService $calculator)
+    {
+        $this->authorize('update', $periodFinal->groupSubject);
+        $this->assertPeriodIsOpen($periodFinal->period_id);
+
+        $periodFinal->update(['manually_adjusted' => false, 'adjustment_reason' => null]);
+        $fresh = $calculator->recalculatePeriodFinal($periodFinal->student_id, $periodFinal->group_subject_id, $periodFinal->period_id);
+
+        return response()->json(['data' => $fresh]);
+    }
+
+    private function assertPeriodIsOpen(int $periodId): void
+    {
+        abort_if(Period::whereKey($periodId)->value('is_closed'), 422, 'El período está cerrado. Las notas no se pueden editar.');
     }
 
     private function authorizeAndAssertEditable(GradeColumn $column): void

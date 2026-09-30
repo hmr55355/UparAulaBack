@@ -158,4 +158,43 @@ class InstitutionTest extends TestCase
 
         $response->assertUnprocessable()->assertJsonValidationErrors(['email']);
     }
+
+    public function test_the_last_admin_cannot_be_demoted_or_removed(): void
+    {
+        $admin = User::factory()->create();
+        $institutionId = $this->actingAs($admin, 'sanctum')->postJson('/api/institutions', [
+            'name' => 'Colegio', 'city' => 'Valledupar', 'department' => 'Cesar',
+            'academic_year' => 2026, 'academic_year_start' => '2026-01-20', 'academic_year_end' => '2026-11-28',
+        ])->json('data.id');
+
+        $this->actingAs($admin, 'sanctum')->patchJson("/api/institutions/{$institutionId}/teachers/{$admin->id}/role", ['role' => 'teacher'])
+            ->assertStatus(422);
+        $this->actingAs($admin, 'sanctum')->deleteJson("/api/institutions/{$institutionId}/teachers/{$admin->id}")
+            ->assertStatus(422);
+
+        // Con un segundo admin, sí.
+        $other = User::factory()->create();
+        \App\Models\InstitutionTeacher::create([
+            'institution_id' => $institutionId, 'user_id' => $other->id, 'role' => 'admin', 'status' => 'active',
+        ]);
+        $this->actingAs($admin, 'sanctum')->patchJson("/api/institutions/{$institutionId}/teachers/{$admin->id}/role", ['role' => 'teacher'])
+            ->assertOk();
+    }
+
+    public function test_the_admin_can_edit_the_institution_details_but_not_the_scale_from_there(): void
+    {
+        $admin = User::factory()->create();
+        $institutionId = $this->actingAs($admin, 'sanctum')->postJson('/api/institutions', [
+            'name' => 'Colegio', 'city' => 'Valledupar', 'department' => 'Cesar',
+            'academic_year' => 2026, 'academic_year_start' => '2026-01-20', 'academic_year_end' => '2026-11-28',
+        ])->json('data.id');
+
+        $this->actingAs($admin, 'sanctum')->putJson("/api/institutions/{$institutionId}", [
+            'name' => 'I.E. Manuel Germán Cuello Gutiérrez', 'nit' => '900123456-7', 'rector' => 'María Pérez',
+            'min_passing_grade' => 3.0,
+        ])->assertOk()->assertJsonPath('data.rector', 'María Pérez');
+
+        $this->assertDatabaseHas('institutions', ['id' => $institutionId, 'nit' => '900123456-7', 'min_passing_grade' => 6.0]);
+    }
+
 }

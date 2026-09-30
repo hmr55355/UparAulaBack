@@ -203,4 +203,27 @@ class CopyChargeTest extends TestCase
         $this->assertDatabaseMissing('copy_charges', ['id' => $chargeId]);
     }
 
+
+    public function test_a_payment_marked_by_mistake_can_go_back_to_owing(): void
+    {
+        $chargeId = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/copy-charges', [
+            'group_id' => $this->group->id, 'description' => 'Guía', 'quantity' => 10, 'unit_price' => 200,
+            'charge_date' => '2026-02-01',
+        ])->json('data.id');
+        $this->actingAs($this->teacher, 'sanctum')->postJson("/api/copy-charges/{$chargeId}/payments/bulk", [
+            'payments' => [['student_id' => $this->studentA->id, 'status' => 'pagado', 'amount_paid' => 2000, 'payment_date' => '2026-02-03']],
+        ])->assertCreated();
+
+        $this->actingAs($this->teacher, 'sanctum')->postJson("/api/copy-charges/{$chargeId}/payments/bulk", [
+            'payments' => [['student_id' => $this->studentA->id, 'status' => 'debe']],
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('student_copy_payments', [
+            'copy_charge_id' => $chargeId, 'student_id' => $this->studentA->id,
+            'status' => 'debe', 'amount_paid' => 0, 'payment_date' => null,
+        ]);
+        $this->actingAs($this->teacher, 'sanctum')->getJson("/api/copy-charges?groupId={$this->group->id}")
+            ->assertJsonPath('data.0.paid_count', 0);
+    }
+
 }

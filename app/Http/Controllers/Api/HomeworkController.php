@@ -9,6 +9,7 @@ use App\Models\GradeSection;
 use App\Models\GroupSubject;
 use App\Models\Homework;
 use App\Models\HomeworkDelivery;
+use App\Models\Period;
 use App\Models\Student;
 use App\Services\GradeCalculatorService;
 use App\Services\PerformanceScale;
@@ -83,7 +84,7 @@ class HomeworkController extends Controller
             ])->id;
 
             if ($automaticWeight) {
-                $this->distributeWeightsEqually($section);
+                $section->distributeWeightsEqually();
                 $calculator->recalculateCourse($groupSubject->id, $section->period_id);
             }
         }
@@ -184,6 +185,12 @@ class HomeworkController extends Controller
     public function bulkDeliveries(Request $request, Homework $homework, GradeCalculatorService $calculator)
     {
         $this->authorize('update', $homework->groupSubject);
+        // Las entregas de una tarea con nota escriben en la planilla: con el período cerrado, no.
+        abort_if(
+            $homework->is_graded && Period::whereKey($homework->period_id)->value('is_closed'),
+            422,
+            'El período está cerrado. Las notas no se pueden editar.'
+        );
 
         $validated = $request->validate([
             'deliveries' => ['required', 'array', 'min:1'],
@@ -234,26 +241,6 @@ class HomeworkController extends Controller
         }
 
         return response()->json(['data' => $saved, 'count' => $saved->count()], 201);
-    }
-
-    /**
-     * Reparte el 100 % por igual entre las columnas de la sección, con un decimal;
-     * la última absorbe el redondeo para que la suma sea exactamente 100 (lo mismo
-     * que hace el modo "Automático" de Configurar planilla).
-     */
-    private function distributeWeightsEqually(GradeSection $section): void
-    {
-        $columns = $section->columns()->orderBy('sort_order')->get();
-        $count = $columns->count();
-        if ($count === 0) {
-            return;
-        }
-
-        $share = floor(1000 / $count) / 10;
-        $columns->each(function (GradeColumn $column, int $index) use ($count, $share) {
-            $weight = $index === $count - 1 ? round(100 - $share * ($count - 1), 1) : $share;
-            $column->update(['weight' => $weight]);
-        });
     }
 
 }

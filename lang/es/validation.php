@@ -159,6 +159,16 @@ return [
     ],
 
     'attributes' => [
+        'document_number' => 'número de documento',
+        'document_type' => 'tipo de documento',
+        'first_name' => 'nombres',
+        'last_name' => 'apellidos',
+        'birthdate' => 'fecha de nacimiento',
+        'gender' => 'sexo',
+        'address' => 'dirección',
+        'withdrawal_date' => 'fecha de retiro',
+        'enrollment_date' => 'fecha de matrícula',
+        'to_group_id' => 'grupo de destino',
         'name' => 'nombre',
         'email' => 'correo electrónico',
         'password' => 'contraseña',

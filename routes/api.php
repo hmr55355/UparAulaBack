@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\StudentController;
 use App\Http\Controllers\Api\StudentImportController;
+use App\Http\Controllers\Api\StudentManagementController;
 use App\Http\Controllers\Api\StudentObservationController;
 use App\Http\Controllers\Api\SubjectController;
 use App\Http\Controllers\Api\VoiceNoteController;
@@ -53,6 +54,7 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::delete('/me', [AuthController::class, 'destroy']);
         Route::put('/profile', [AuthController::class, 'updateProfile']);
+        Route::get('/avatar', [AuthController::class, 'avatar']);
         Route::patch('/notification-preferences', [AuthController::class, 'updateNotificationPreferences']);
     });
 
@@ -90,6 +92,8 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
 
     Route::get('/academic-years', [AcademicYearController::class, 'index']);
     Route::post('/academic-years', [AcademicYearController::class, 'store']);
+    Route::put('/academic-years/{academicYear}', [AcademicYearController::class, 'update']);
+    Route::patch('/academic-years/{academicYear}/set-active', [AcademicYearController::class, 'setActive']);
 
     Route::get('/periods', [PeriodController::class, 'index']);
     Route::post('/periods', [PeriodController::class, 'store']);
@@ -148,10 +152,12 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::post('/section-finals/calculate', [GradeController::class, 'calculateSectionFinals']);
     Route::get('/section-finals', [GradeController::class, 'sectionFinals']);
     Route::put('/section-finals/{sectionFinal}/adjust', [GradeController::class, 'adjustSectionFinal']);
+    Route::delete('/section-finals/{sectionFinal}/adjust', [GradeController::class, 'clearSectionAdjustment']);
 
     Route::post('/period-finals/calculate', [GradeController::class, 'calculatePeriodFinals']);
     Route::get('/period-finals', [GradeController::class, 'periodFinals']);
     Route::put('/period-finals/{periodFinal}/adjust', [GradeController::class, 'adjustPeriodFinal']);
+    Route::delete('/period-finals/{periodFinal}/adjust', [GradeController::class, 'clearPeriodAdjustment']);
 
     Route::post('/schedule/duplicate-day', [ClassScheduleController::class, 'duplicateDay']);
     Route::get('/schedule/current-class', [ClassScheduleController::class, 'currentClass']);
@@ -191,6 +197,12 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::delete('/observations/{studentObservation}', [StudentObservationController::class, 'destroy']);
 
     Route::get('/students/{student}/full-profile', [StudentController::class, 'fullProfile']);
+    Route::get('/groups/{group}/enrollments', [StudentManagementController::class, 'enrollments']);
+    Route::post('/students', [StudentManagementController::class, 'store']);
+    Route::put('/students/{student}', [StudentManagementController::class, 'update']);
+    Route::post('/students/{student}/withdraw', [StudentManagementController::class, 'withdraw']);
+    Route::post('/students/{student}/transfer', [StudentManagementController::class, 'transfer']);
+    Route::post('/students/{student}/enroll', [StudentManagementController::class, 'enroll']);
 
     Route::get('/homeworks', [HomeworkController::class, 'index']);
     Route::post('/homeworks', [HomeworkController::class, 'store']);

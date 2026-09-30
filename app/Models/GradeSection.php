@@ -44,4 +44,25 @@ class GradeSection extends Model
     {
         return $this->hasMany(SectionFinal::class);
     }
+
+    /**
+     * Reparte el 100 % por igual entre las columnas de la sección, con un decimal;
+     * la última absorbe el redondeo para que la suma sea exactamente 100 (lo mismo
+     * que el modo "Automático" de Configurar planilla).
+     */
+    public function distributeWeightsEqually(): void
+    {
+        $columns = $this->columns()->orderBy('sort_order')->get();
+        $count = $columns->count();
+        if ($count === 0) {
+            return;
+        }
+
+        $share = floor(1000 / $count) / 10;
+        $columns->each(function (GradeColumn $column, int $index) use ($count, $share) {
+            $weight = $index === $count - 1 ? round(100 - $share * ($count - 1), 1) : $share;
+            $column->update(['weight' => $weight]);
+        });
+    }
+
 }

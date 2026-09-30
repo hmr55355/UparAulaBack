@@ -79,4 +79,28 @@ class AuthTest extends TestCase
     {
         $this->getJson('/api/auth/me')->assertUnauthorized();
     }
+
+    public function test_a_user_can_upload_view_replace_and_remove_their_avatar(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $user = \App\Models\User::factory()->create();
+
+        $first = $this->actingAs($user, 'sanctum')->post('/api/auth/profile', [
+            '_method' => 'PUT', 'avatar' => \Illuminate\Http\UploadedFile::fake()->image('yo.png', 200, 200),
+        ], ['Accept' => 'application/json'])->assertOk()->json('data.avatar');
+        \Illuminate\Support\Facades\Storage::disk('local')->assertExists($first);
+        $this->actingAs($user, 'sanctum')->get('/api/auth/avatar')->assertOk();
+
+        $second = $this->actingAs($user, 'sanctum')->post('/api/auth/profile', [
+            '_method' => 'PUT', 'avatar' => \Illuminate\Http\UploadedFile::fake()->image('nueva.png', 200, 200),
+        ], ['Accept' => 'application/json'])->assertOk()->json('data.avatar');
+        \Illuminate\Support\Facades\Storage::disk('local')->assertMissing($first);
+        \Illuminate\Support\Facades\Storage::disk('local')->assertExists($second);
+
+        $this->actingAs($user, 'sanctum')->putJson('/api/auth/profile', ['remove_avatar' => true])
+            ->assertOk()->assertJsonPath('data.avatar', null);
+        \Illuminate\Support\Facades\Storage::disk('local')->assertMissing($second);
+        $this->actingAs($user, 'sanctum')->getJson('/api/auth/avatar')->assertNotFound();
+    }
+
 }

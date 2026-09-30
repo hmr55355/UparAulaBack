@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AcademicYear;
 use App\Models\Institution;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AcademicYearController extends Controller
 {
@@ -28,13 +29,46 @@ class AcademicYearController extends Controller
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
-        if ($request->boolean('is_active')) {
+        // La columna is_active vale 1 por defecto: sin esto, crear un año sin marcarlo
+        // dejaba dos años activos a la vez.
+        $validated['is_active'] = $request->boolean('is_active');
+        if ($validated['is_active']) {
             $institution->academicYears()->update(['is_active' => false]);
         }
 
         $academicYear = $institution->academicYears()->create($validated);
 
         return response()->json(['data' => $academicYear], 201);
+    }
+
+    public function update(Request $request, AcademicYear $academicYear)
+    {
+        $this->authorize('manageAcademics', $academicYear->institution);
+
+        $validated = $request->validate([
+            'start_date' => ['sometimes', 'date'],
+            'end_date' => ['sometimes', 'date'],
+        ]);
+        $start = $validated['start_date'] ?? $academicYear->start_date->toDateString();
+        $end = $validated['end_date'] ?? $academicYear->end_date->toDateString();
+        abort_if($end <= $start, 422, 'El año escolar debe terminar después de empezar.');
+
+        $academicYear->update($validated);
+
+        return response()->json(['data' => $academicYear->fresh()]);
+    }
+
+    /** Solo un año activo por institución. */
+    public function setActive(AcademicYear $academicYear)
+    {
+        $this->authorize('manageAcademics', $academicYear->institution);
+
+        DB::transaction(function () use ($academicYear) {
+            AcademicYear::where('institution_id', $academicYear->institution_id)->update(['is_active' => false]);
+            $academicYear->update(['is_active' => true]);
+        });
+
+        return response()->json(['data' => $academicYear->fresh()]);
     }
 
     private function resolveInstitution(Request $request): Institution

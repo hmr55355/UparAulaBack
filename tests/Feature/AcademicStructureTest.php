@@ -170,4 +170,29 @@ class AcademicStructureTest extends TestCase
     {
         $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/shifts/{$this->shift->id}")->assertStatus(422);
     }
+
+    public function test_only_an_empty_group_can_be_deleted(): void
+    {
+        $level = $this->gradeLevel('Décimo', 10);
+        $makeGroup = fn (string $name) => $this->actingAs($this->admin, 'sanctum')->postJson('/api/groups', [
+            'institution_id' => $this->institution->id, 'academic_year_id' => $this->year->id,
+            'name' => $name, 'grade_level_id' => $level->id,
+        ])->json('data.id');
+
+        $withStudent = $makeGroup('1001');
+        $student = \App\Models\Student::create(['institution_id' => $this->institution->id, 'first_name' => 'Ana', 'last_name' => 'Díaz']);
+        \App\Models\StudentGroup::create([
+            'student_id' => $student->id, 'group_id' => $withStudent, 'academic_year_id' => $this->year->id,
+            'enrollment_date' => '2026-01-20', 'status' => 'activo',
+        ]);
+        $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/groups/{$withStudent}")
+            ->assertStatus(422)
+            ->assertJsonPath('message', fn ($m) => str_contains($m, '1 estudiantes matriculados'));
+        $this->assertDatabaseHas('student_groups', ['group_id' => $withStudent]);
+
+        $empty = $makeGroup('1099');
+        $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/groups/{$empty}")->assertOk();
+        $this->assertDatabaseMissing('groups', ['id' => $empty]);
+    }
+
 }

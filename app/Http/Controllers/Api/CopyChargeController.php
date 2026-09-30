@@ -173,14 +173,18 @@ class CopyChargeController extends Controller
         ]);
 
         $saved = collect($validated['payments'])->map(function (array $item) use ($copyCharge, $request) {
+            // "debe" también sirve para deshacer un pago marcado por error: sin monto,
+            // sin fecha y sin motivo de exoneración, como si nunca se hubiera registrado.
+            $owes = $item['status'] === 'debe';
+
             return StudentCopyPayment::updateOrCreate(
                 ['copy_charge_id' => $copyCharge->id, 'student_id' => $item['student_id']],
                 [
                     'registered_by' => $request->user()->id,
                     'status' => $item['status'],
-                    'amount_paid' => $item['amount_paid'] ?? ($item['status'] === 'pagado' ? $copyCharge->total_amount : 0),
-                    'payment_date' => $item['payment_date'] ?? now()->toDateString(),
-                    'exoneration_reason' => $item['exoneration_reason'] ?? null,
+                    'amount_paid' => $owes ? 0 : ($item['amount_paid'] ?? ($item['status'] === 'pagado' ? $copyCharge->total_amount : 0)),
+                    'payment_date' => $owes ? null : ($item['payment_date'] ?? now()->toDateString()),
+                    'exoneration_reason' => $owes ? null : ($item['exoneration_reason'] ?? null),
                     'notes' => $item['notes'] ?? null,
                 ]
             );

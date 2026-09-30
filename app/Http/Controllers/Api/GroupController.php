@@ -7,6 +7,7 @@ use App\Models\GradeLevel;
 use App\Models\Group;
 use App\Models\Institution;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class GroupController extends Controller
@@ -77,9 +78,27 @@ class GroupController extends Controller
         return $validated;
     }
 
+    /**
+     * Solo se borra un grupo vacío (p. ej. creado por error). Borrarlo arrastra en
+     * cascada, sin papelera, todo lo que cuelga de él en la base: matrículas, cursos
+     * (y con ellos notas y asistencia), cobros, anotaciones, citaciones y observaciones.
+     */
     public function destroy(Group $group)
     {
         $this->authorize('manageAcademics', $group->institution);
+
+        $dependencies = array_filter([
+            'estudiantes matriculados' => $group->studentGroups()->count(),
+            'cursos asignados' => $group->groupSubjects()->count(),
+            'cobros de copias' => DB::table('copy_charges')->where('group_id', $group->id)->count(),
+            'anotaciones' => DB::table('behavior_annotations')->where('group_id', $group->id)->count(),
+            'citaciones' => DB::table('parent_citations')->where('group_id', $group->id)->count(),
+            'observaciones' => DB::table('student_observations')->where('group_id', $group->id)->count(),
+        ]);
+        if ($dependencies) {
+            $detail = collect($dependencies)->map(fn ($count, $what) => "{$count} {$what}")->implode(', ');
+            abort(422, "No se puede eliminar el grupo {$group->name}: tiene {$detail}. Solo se pueden eliminar grupos vacíos.");
+        }
 
         $group->delete();
 
