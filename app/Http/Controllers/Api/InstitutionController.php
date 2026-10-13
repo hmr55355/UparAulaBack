@@ -108,6 +108,8 @@ class InstitutionController extends Controller
             'nit' => ['nullable', 'string', 'max:50'],
             'rector' => ['nullable', 'string', 'max:255'],
             'logo' => ['sometimes', 'file', 'image', 'max:2048'],
+            // Si los docentes pueden matricular, retirar y trasladar estudiantes de sus grupos.
+            'teachers_manage_students' => ['sometimes', 'boolean'],
         ]);
         // La escala y la nota mínima se cambian solo desde PUT …/performance-levels:
         // la nota mínima sale de la escala y no deben quedar desincronizadas.

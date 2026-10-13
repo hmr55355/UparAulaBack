@@ -10,6 +10,7 @@ use App\Models\Report;
 use App\Models\Student;
 use App\Models\StudentCopyPayment;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CopyChargeController extends Controller
 {
@@ -23,7 +24,9 @@ class CopyChargeController extends Controller
         $group = Group::findOrFail($request->groupId);
         $this->authorize('view', $group->institution);
 
+        // Cada docente lleva sus propios cobros: solo ve los que registró.
         $charges = CopyCharge::where('group_id', $group->id)
+            ->where('registered_by', $request->user()->id)
             ->when($request->periodId, fn ($q, $periodId) => $q->where('period_id', $periodId))
             ->withCount([
                 'payments as paid_count' => fn ($q) => $q->where('status', 'pagado'),
@@ -51,6 +54,7 @@ class CopyChargeController extends Controller
         $validated = $request->validate([
             'group_id' => ['required', 'integer', 'exists:groups,id'],
             'period_id' => ['nullable', 'integer', 'exists:periods,id'],
+            'concept' => ['sometimes', Rule::in(array_keys(CopyCharge::CONCEPTS))],
             'description' => ['required', 'string', 'max:255'],
             'quantity' => ['required', 'integer', 'min:1'],
             'unit_price' => ['required', 'numeric', 'min:0'],
@@ -62,6 +66,7 @@ class CopyChargeController extends Controller
         $this->authorize('view', $group->institution);
 
         $charge = CopyCharge::create([
+            'concept' => 'copias',
             ...$validated,
             'total_amount' => $validated['quantity'] * $validated['unit_price'],
             'registered_by' => $request->user()->id,
@@ -84,8 +89,10 @@ class CopyChargeController extends Controller
     public function update(Request $request, CopyCharge $copyCharge)
     {
         $this->authorize('view', $copyCharge->group->institution);
+        $this->authorizeOwner($copyCharge);
 
         $validated = $request->validate([
+            'concept' => ['sometimes', Rule::in(array_keys(CopyCharge::CONCEPTS))],
             'description' => ['sometimes', 'string', 'max:255'],
             'quantity' => ['sometimes', 'integer', 'min:1'],
             'unit_price' => ['sometimes', 'numeric', 'min:0'],
@@ -124,6 +131,7 @@ class CopyChargeController extends Controller
     public function destroy(Request $request, CopyCharge $copyCharge)
     {
         $this->authorize('view', $copyCharge->group->institution);
+        $this->authorizeOwner($copyCharge);
 
         // Mismo patrón que borrar una tarea con notas: si ya hay dinero recaudado,
         // se pide confirmación explícita antes de perder ese registro.
@@ -143,6 +151,7 @@ class CopyChargeController extends Controller
     public function payments(CopyCharge $copyCharge)
     {
         $this->authorize('view', $copyCharge->group->institution);
+        $this->authorizeOwner($copyCharge);
 
         $students = Student::whereHas(
             'studentGroups',
@@ -161,6 +170,7 @@ class CopyChargeController extends Controller
     public function bulkPayments(Request $request, CopyCharge $copyCharge)
     {
         $this->authorize('view', $copyCharge->group->institution);
+        $this->authorizeOwner($copyCharge);
 
         $validated = $request->validate([
             'payments' => ['required', 'array', 'min:1'],
@@ -196,6 +206,7 @@ class CopyChargeController extends Controller
     public function updatePaymentSingle(Request $request, StudentCopyPayment $payment)
     {
         $this->authorize('view', $payment->copyCharge->group->institution);
+        $this->authorizeOwner($payment->copyCharge);
 
         $validated = $request->validate([
             'status' => ['required', 'in:debe,pago_parcial,pagado,exonerado'],
@@ -240,8 +251,16 @@ class CopyChargeController extends Controller
             'status' => 'pending',
         ]);
 
-        GenerateReportJob::dispatch($report->id);
+        // En la misma petición, sin cola: en el hosting no hay un `queue:work` corriendo y
+        // el reporte se quedaba "pendiente" para siempre. Un reporte tarda 1–2 segundos.
+        GenerateReportJob::dispatchSync($report->id);
 
         return response()->json(['data' => ['id' => $report->id]], 202);
+    }
+
+    /** Un cobro es de quien lo registró: ni otro docente ni el administrador lo ven o lo cambian. */
+    private function authorizeOwner(CopyCharge $charge): void
+    {
+        abort_unless((int) $charge->registered_by === (int) request()->user()->id, 403, 'Este cobro lo registró otro docente.');
     }
 }

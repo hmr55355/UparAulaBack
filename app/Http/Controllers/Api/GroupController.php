@@ -19,7 +19,7 @@ class GroupController extends Controller
         $groups = $institution->groups()
             ->when($request->query('academicYearId'), fn ($q, $id) => $q->where('academic_year_id', $id))
             ->when($request->query('shiftId'), fn ($q, $id) => $q->where('shift_id', $id))
-            ->with('shift:id,name')
+            ->with(['shift:id,name', 'director:id,name'])
             ->orderBy('grade_level')
             ->orderBy('name')
             ->get();
@@ -57,11 +57,14 @@ class GroupController extends Controller
             'grade_level' => ['sometimes', 'string', 'max:50'],
             'shift_id' => ['sometimes', 'integer', Rule::exists('shifts', 'id')->where('institution_id', $group->institution_id)],
             'section' => ['nullable', 'string', 'max:50'],
+            // Director de grupo: debe ser un docente activo de la institución (null lo quita).
+            'director_id' => ['sometimes', 'nullable', 'integer',
+                Rule::exists('institution_teachers', 'user_id')->where('institution_id', $group->institution_id)->where('status', 'active')],
         ]);
 
         $group->update($this->withLegacyGradeLevel($validated));
 
-        return response()->json(['data' => $group->load('shift:id,name')]);
+        return response()->json(['data' => $group->load(['shift:id,name', 'director:id,name'])]);
     }
 
     /**
@@ -103,6 +106,35 @@ class GroupController extends Controller
         $group->delete();
 
         return response()->json(['message' => 'Grupo eliminado.']);
+    }
+
+    /**
+     * Grupos donde puedo gestionar estudiantes o que dirijo (para las páginas
+     * "Estudiantes" y "Dirección de grupo"): todos si soy admin; si soy docente,
+     * los que dirijo y aquellos donde dicto.
+     */
+    public function mine(Request $request)
+    {
+        $institution = $this->resolveInstitution($request);
+        $user = $request->user();
+        $isAdmin = $user->isAdminOf($institution->id);
+
+        $groups = $institution->groups()
+            ->whereHas('academicYear', fn ($q) => $q->where('is_active', true))
+            ->when(! $isAdmin, fn ($q) => $q->where(fn ($w) => $w
+                ->where('director_id', $user->id)
+                ->orWhereHas('groupSubjects', fn ($gs) => $gs->where('user_id', $user->id)->where('is_active', true))))
+            ->with(['shift:id,name', 'director:id,name'])
+            ->orderBy('grade_level')->orderBy('name')
+            ->get()
+            ->map(fn (Group $group) => [
+                ...$group->toArray(),
+                'is_director' => $group->isDirectedBy($user),
+                'can_oversee' => $isAdmin || $group->isDirectedBy($user),
+                'can_manage_students' => $isAdmin || ($institution->teachers_manage_students),
+            ]);
+
+        return response()->json(['data' => $groups]);
     }
 
     public function students(Group $group)

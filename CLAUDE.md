@@ -12,9 +12,9 @@ antes de tocar el motor de notas, la asistencia o los monitores.
 
 ```bash
 php artisan serve                 # API en http://localhost:8000
-php artisan test                  # 145 pruebas (SQLite en memoria, no toca MySQL)
+php artisan test                  # 155 pruebas (SQLite en memoria, no toca MySQL)
 php artisan migrate               # nunca migrate:fresh sin permiso explícito
-php artisan queue:work            # obligatorio para que los reportes terminen
+php artisan queue:work            # solo para Web Push; los reportes ya no usan la cola
 ```
 
 MySQL local: base `uparaula` en `127.0.0.1:3306`. Se cae seguido; si no responde,
@@ -35,6 +35,12 @@ pídele al usuario que la inicie en vez de adivinar comandos.
   una nota y el color aclarado para Excel/PDF. `min_passing_grade` se deriva de la
   escala (inicio del primer nivel que no es Bajo) y solo cambia por
   `PUT /institutions/{id}/performance-levels`.
+- **Dirección de grupo**: `groups.director_id`. `Group::canBeOverseenBy` (admin o
+  director) abre el consolidado, los boletines y la prematrícula;
+  `Group::studentsCanBeManagedBy` (admin, o docentes del grupo si
+  `institutions.teachers_manage_students`) abre matrícula, retiro y traslado.
+  `GroupOverviewService` arma el consolidado y los datos del boletín. Las
+  descargas de `GroupDirectorController` son directas (sin cola).
 - **Estructura académica**: `grade_levels` (grados), `shifts` (jornadas),
   `class_blocks` (bloques y descansos por jornada). Los grupos apuntan a un grado
   y una jornada; las materias se vinculan a grados (`grade_level_subject`).

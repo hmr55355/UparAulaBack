@@ -118,7 +118,7 @@ class ReportGenerationTest extends TestCase
     private function assertReportCompletedAndDownloadable(int $reportId): Report
     {
         $report = Report::findOrFail($reportId);
-        $this->assertEquals('completed', $report->status);
+        $this->assertEquals('completed', $report->status, (string) $report->error_message);
         $this->assertNotNull($report->file_path);
         Storage::disk('local')->assertExists($report->file_path);
 
@@ -202,6 +202,8 @@ class ReportGenerationTest extends TestCase
 
     public function test_academic_risk_report_generates_a_file(): void
     {
+        InstitutionTeacher::where('user_id', $this->teacher->id)->update(['role' => 'admin']);
+
         $reportId = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/reports/academic-risk', [
             'institution_id' => $this->institution->id,
             'period_id' => $this->period->id,
@@ -243,21 +245,14 @@ class ReportGenerationTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_a_teacher_with_no_course_in_the_group_can_still_generate_group_wide_reports(): void
+    public function test_a_teacher_with_no_course_in_the_group_gets_an_empty_payments_summary(): void
     {
         $otherTeacher = User::factory()->create();
         InstitutionTeacher::create([
             'institution_id' => $this->institution->id, 'user_id' => $otherTeacher->id, 'role' => 'teacher', 'status' => 'active',
         ]);
 
-        $this->actingAs($otherTeacher, 'sanctum')->postJson('/api/reports/behavior-citations', [
-            'group_id' => $this->group->id, 'period_id' => $this->period->id, 'format' => 'excel',
-        ])->assertStatus(202);
-
-        $this->actingAs($otherTeacher, 'sanctum')->postJson('/api/reports/academic-risk', [
-            'institution_id' => $this->institution->id, 'period_id' => $this->period->id, 'format' => 'excel',
-        ])->assertStatus(202);
-
+        // El resumen de pagos solo trae los cobros de quien lo pide.
         $this->actingAs($otherTeacher, 'sanctum')->postJson('/api/copy-charges/summary', [
             'group_id' => $this->group->id,
         ])->assertStatus(202);
@@ -281,5 +276,53 @@ class ReportGenerationTest extends TestCase
         ]);
 
         $this->actingAs($this->teacher, 'sanctum')->get("/api/reports/{$report->id}/download")->assertStatus(409);
+    }
+
+    public function test_reports_do_not_expose_other_teachers_data(): void
+    {
+        $other = User::factory()->create();
+        InstitutionTeacher::create([
+            'institution_id' => $this->institution->id, 'user_id' => $other->id, 'role' => 'teacher', 'status' => 'active',
+        ]);
+
+        // No dicta en el grupo: ni boletín, ni comportamiento, ni riesgo académico.
+        $this->actingAs($other, 'sanctum')->postJson('/api/reports/student-bulletin', [
+            'student_id' => $this->studentA->id, 'period_id' => $this->period->id,
+        ])->assertForbidden();
+        $this->actingAs($other, 'sanctum')->postJson('/api/reports/behavior-citations', [
+            'group_id' => $this->group->id, 'period_id' => $this->period->id, 'format' => 'excel',
+        ])->assertForbidden();
+        $this->actingAs($other, 'sanctum')->postJson('/api/reports/academic-risk', [
+            'institution_id' => $this->institution->id, 'period_id' => $this->period->id, 'format' => 'excel',
+        ])->assertForbidden();
+
+        // Tampoco puede reordenar la planilla de otro docente.
+        $section = GradeSection::first();
+        $column = GradeColumn::first();
+        $this->actingAs($other, 'sanctum')->patchJson('/api/grade-sections/reorder', [
+            'sections' => [['id' => $section->id, 'sort_order' => 5]],
+        ])->assertForbidden();
+        $this->actingAs($other, 'sanctum')->patchJson('/api/grade-columns/reorder', [
+            'columns' => [['id' => $column->id, 'sort_order' => 5]],
+        ])->assertForbidden();
+        $this->assertSame(0, (int) $section->fresh()->sort_order);
+
+        // Con una materia en el grupo, su boletín trae solo esa materia.
+        $subject = Subject::create(['institution_id' => $this->institution->id, 'name' => 'Química']);
+        GroupSubject::create([
+            'group_id' => $this->group->id, 'subject_id' => $subject->id, 'user_id' => $other->id,
+            'institution_id' => $this->institution->id, 'academic_year_id' => $this->academicYear->id,
+        ]);
+        $overview = app(\App\Services\GroupOverviewService::class);
+        $levels = $this->institution->performanceLevels()->get();
+        $mine = $overview->bulletin($this->studentA, $this->group, $this->period, $levels, null, $other->id);
+        $all = $overview->bulletin($this->studentA, $this->group, $this->period, $levels);
+        $this->assertSame(['Química'], $mine['grades']->pluck('subject')->all());
+        $this->assertCount(2, $all['grades']);
+
+        $reportId = $this->actingAs($other, 'sanctum')->postJson('/api/reports/student-bulletin', [
+            'student_id' => $this->studentA->id, 'period_id' => $this->period->id,
+        ])->assertStatus(202)->json('data.id');
+        $this->assertReportCompletedAndDownloadable($reportId);
     }
 }

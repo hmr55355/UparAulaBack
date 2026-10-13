@@ -2,16 +2,15 @@
 
 namespace App\Services\Reports;
 
-use App\Models\AttendanceRecord;
-use App\Models\BehaviorAnnotation;
-use App\Models\GroupSubject;
+use App\Models\Institution;
 use App\Models\Period;
-use App\Models\PeriodFinal;
 use App\Models\Report;
 use App\Models\Student;
 use App\Models\StudentGroup;
-use App\Models\StudentObservation;
+use App\Models\User;
+use App\Services\GroupOverviewService;
 use App\Services\PerformanceScale;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -24,77 +23,45 @@ use Illuminate\Support\Str;
  */
 class StudentBulletinReportService
 {
+    public function __construct(private GroupOverviewService $overview) {}
+
     public function generate(Report $report): string
     {
         $params = $report->params;
         $student = Student::with('institution')->findOrFail($params['student_id']);
         $period = Period::findOrFail($params['period_id']);
 
-        $studentGroup = StudentGroup::where('student_id', $student->id)
+        $group = StudentGroup::where('student_id', $student->id)
             ->where('academic_year_id', $period->academic_year_id)
             ->where('status', 'activo')
-            ->with('group')
-            ->first();
-
-        $groupSubjects = $studentGroup
-            ? GroupSubject::where('group_id', $studentGroup->group_id)->where('is_active', true)->with('subject')->get()
-            : collect();
-
-        // Cada definitiva con su nivel institucional y su equivalencia en la escala
-        // nacional (Decreto 1290 de 2009, art. 5): es lo que permite leer el boletín
-        // en otro colegio si el estudiante se traslada.
-        $levels = $student->institution->performanceLevels()->get();
-        $grades = $groupSubjects->map(function (GroupSubject $gs) use ($student, $period, $levels) {
-            $periodFinal = PeriodFinal::where('student_id', $student->id)
-                ->where('group_subject_id', $gs->id)
-                ->where('period_id', $period->id)
-                ->first();
-            $value = $periodFinal?->period_final !== null ? (float) $periodFinal->period_final : null;
-            $level = PerformanceScale::levelFor($levels, $value);
-
-            return [
-                'subject' => $gs->subject->name,
-                'period_final' => $value,
-                'level_name' => $level?->name,
-                'national_level' => $level ? PerformanceScale::NATIONAL_LABELS[$level->national_level] : null,
-                'color' => $level ? PerformanceScale::tint($level->color) : null,
-            ];
-        });
-
-        $attendanceCounts = AttendanceRecord::where('student_id', $student->id)
-            ->whereIn('group_subject_id', $groupSubjects->pluck('id'))
-            ->whereBetween('date', [$period->start_date, $period->end_date])
-            ->selectRaw('status, count(*) as total')
-            ->groupBy('status')
-            ->pluck('total', 'status');
-
-        $behaviorCounts = BehaviorAnnotation::where('student_id', $student->id)
-            ->whereBetween('date', [$period->start_date, $period->end_date])
-            ->selectRaw('type, count(*) as total')
-            ->groupBy('type')
-            ->pluck('total', 'type');
-
-        $observations = StudentObservation::where('student_id', $student->id)
-            ->where('period_id', $period->id)
-            ->where('is_private', false)
-            ->orderBy('date')
-            ->get();
+            ->with('group.director:id,name')
+            ->first()?->group;
 
         $relativePath = "reports/{$student->institution_id}/{$report->user_id}/".Str::uuid().'.pdf';
-
-        PdfTableRenderer::render($relativePath, 'reports.student-bulletin', [
-            'student' => $student,
-            'logoPath' => $student->institution->logo ? Storage::disk('local')->path($student->institution->logo) : null,
-            'period' => $period,
-            'group' => $studentGroup?->group,
-            'grades' => $grades,
-            'levels' => $levels,
-            'nationalLabels' => PerformanceScale::NATIONAL_LABELS,
-            'attendanceCounts' => $attendanceCounts,
-            'behaviorCounts' => $behaviorCounts,
-            'observations' => $observations,
-        ]);
+        // Las notas de todas las materias son del administrador y del director del grupo;
+        // cualquier otro docente recibe el boletín solo con las materias que dicta.
+        $requester = User::find($report->user_id);
+        $seesAll = $requester && ($requester->isAdminOf($student->institution_id) || $group?->isDirectedBy($requester));
+        $this->render($relativePath, $student->institution, $period, collect([[$student, $group, null]]), $seesAll ? null : (int) $report->user_id);
 
         return $relativePath;
+    }
+
+    /**
+     * Uno o varios boletines en un solo PDF (una página por estudiante).
+     *
+     * @param  Collection<int, array{0: Student, 1: ?\App\Models\Group, 2: ?array}>  $entries  estudiante, grupo y su fila del consolidado
+     */
+    public function render(string $relativePath, Institution $institution, Period $period, Collection $entries, ?int $onlyTeacherId = null): void
+    {
+        $levels = $institution->performanceLevels()->get();
+
+        PdfTableRenderer::render($relativePath, 'reports.student-bulletin', [
+            'institution' => $institution,
+            'logoPath' => $institution->logo ? Storage::disk('local')->path($institution->logo) : null,
+            'levels' => $levels,
+            'nationalLabels' => PerformanceScale::NATIONAL_LABELS,
+            'bulletins' => $entries->map(fn ($e) => $this->overview->bulletin($e[0], $e[1], $period, $levels, $e[2], $onlyTeacherId))->all(),
+        ]);
     }
 }

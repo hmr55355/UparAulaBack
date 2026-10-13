@@ -13,16 +13,17 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Estudiantes y matrícula a mano (antes solo entraban por Excel): crear y editar
- * datos, retirar, trasladar de grupo y volver a matricular. Solo administradores
- * (manageAcademics). Retirar o trasladar no borra nada: la matrícula anterior queda
+ * datos, retirar, trasladar de grupo y volver a matricular. Siempre el
+ * administrador; los docentes (director del grupo o quien dicta en él) solo si la
+ * institución lo habilitó (Group::studentsCanBeManagedBy). Retirar o trasladar no borra nada: la matrícula anterior queda
  * con su estado y fecha, y las notas, asistencia y anotaciones se conservan.
  */
 class StudentManagementController extends Controller
 {
     /** Matrículas del grupo, incluidas las retiradas y trasladadas (para gestionarlas). */
-    public function enrollments(Group $group)
+    public function enrollments(Request $request, Group $group)
     {
-        $this->authorize('manageAcademics', $group->institution);
+        $this->authorizeGroup($request, $group);
 
         $enrollments = $group->studentGroups()
             ->with('student')
@@ -37,7 +38,7 @@ class StudentManagementController extends Controller
     public function store(Request $request)
     {
         $group = Group::findOrFail($request->input('group_id'));
-        $this->authorize('manageAcademics', $group->institution);
+        $this->authorizeGroup($request, $group);
 
         $validated = $request->validate([
             'group_id' => ['required', 'integer'],
@@ -66,7 +67,7 @@ class StudentManagementController extends Controller
 
     public function update(Request $request, Student $student)
     {
-        $this->authorize('manageAcademics', $student->institution);
+        $this->authorizeStudent($request, $student);
 
         $validated = $request->validate($this->studentRules($student->institution_id, $student->id, partial: true));
         $student->update($validated);
@@ -76,7 +77,7 @@ class StudentManagementController extends Controller
 
     public function withdraw(Request $request, Student $student)
     {
-        $this->authorize('manageAcademics', $student->institution);
+        $this->authorizeGroup($request, Group::findOrFail($request->input('group_id')));
 
         $validated = $request->validate([
             'group_id' => ['required', 'integer'],
@@ -102,7 +103,7 @@ class StudentManagementController extends Controller
      */
     public function transfer(Request $request, Student $student)
     {
-        $this->authorize('manageAcademics', $student->institution);
+        $this->authorizeGroup($request, Group::findOrFail($request->input('from_group_id')));
 
         $validated = $request->validate([
             'from_group_id' => ['required', 'integer'],
@@ -133,7 +134,7 @@ class StudentManagementController extends Controller
     /** Volver a matricular (p. ej. un estudiante retirado que regresa). */
     public function enroll(Request $request, Student $student)
     {
-        $this->authorize('manageAcademics', $student->institution);
+        $this->authorizeGroup($request, Group::findOrFail($request->input('group_id')));
 
         $validated = $request->validate([
             'group_id' => ['required', 'integer'],
@@ -184,6 +185,25 @@ class StudentManagementController extends Controller
     private function syncActiveFlag(Student $student): void
     {
         $student->update(['is_active' => $student->studentGroups()->where('status', 'activo')->exists()]);
+    }
+
+    private function authorizeGroup(Request $request, Group $group): void
+    {
+        abort_unless(
+            $group->studentsCanBeManagedBy($request->user()),
+            403,
+            'No tienes permiso para gestionar los estudiantes de este grupo.'
+        );
+    }
+
+    /** Editar datos: basta con poder gestionar alguno de los grupos donde está activo (o ser admin). */
+    private function authorizeStudent(Request $request, Student $student): void
+    {
+        $user = $request->user();
+        $allowed = $user->isAdminOf($student->institution_id)
+            || $student->studentGroups()->where('status', 'activo')->with('group.institution')->get()
+                ->contains(fn (StudentGroup $e) => $e->group?->studentsCanBeManagedBy($user));
+        abort_unless($allowed, 403, 'No tienes permiso para editar a este estudiante.');
     }
 
     private function activeEnrollment(Student $student, int $groupId): StudentGroup

@@ -27,7 +27,7 @@ class GenerateReportJob implements ShouldQueue
         try {
             $filePath = match ($report->type) {
                 'grade_sheet' => (new GradeSheetReportService)->generate($report),
-                'student_bulletin' => (new StudentBulletinReportService)->generate($report),
+                'student_bulletin' => app(StudentBulletinReportService::class)->generate($report),
                 'attendance_sheet' => (new AttendanceSheetReportService)->generate($report),
                 'behavior_citations' => (new BehaviorCitationsReportService)->generate($report),
                 'academic_risk' => (new AcademicRiskReportService)->generate($report),

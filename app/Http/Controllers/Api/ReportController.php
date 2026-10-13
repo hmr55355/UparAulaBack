@@ -36,7 +36,11 @@ class ReportController extends Controller
         ]);
 
         $student = Student::findOrFail($validated['student_id']);
-        $this->authorize('view', $student->institution);
+        // Quien le dicta, el director de su grupo o un administrador. Un docente que no
+        // dirige el grupo recibe el boletín solo con sus materias (ver el servicio).
+        $directs = $student->studentGroups()->where('status', 'activo')
+            ->whereHas('group', fn ($q) => $q->where('director_id', $request->user()->id))->exists();
+        abort_unless($student->canBeAccessedBy($request->user()) || $directs, 403, 'Este estudiante no es de tus grupos.');
 
         $validated['format'] = 'pdf';
 
@@ -66,7 +70,11 @@ class ReportController extends Controller
         ]);
 
         $group = Group::findOrFail($validated['group_id']);
-        $this->authorize('view', $group->institution);
+        // Igual que las pantallas de Comportamiento y Citaciones: quien dicta en el grupo,
+        // su director o un administrador.
+        $user = $request->user();
+        $teachesGroup = $group->groupSubjects()->where('user_id', $user->id)->where('is_active', true)->exists();
+        abort_unless($teachesGroup || $group->canBeOverseenBy($user), 403, 'No dictas en este grupo.');
 
         return $this->createAndDispatch($request, 'behavior_citations', $group->institution_id, $validated);
     }
@@ -80,7 +88,8 @@ class ReportController extends Controller
         ]);
 
         $institution = Institution::findOrFail($validated['institution_id']);
-        $this->authorize('view', $institution);
+        // Trae las definitivas de todos los docentes: solo administradores.
+        $this->authorize('manageAcademics', $institution);
 
         return $this->createAndDispatch($request, 'academic_risk', $institution->id, $validated);
     }
@@ -114,7 +123,9 @@ class ReportController extends Controller
             'status' => 'pending',
         ]);
 
-        GenerateReportJob::dispatch($report->id);
+        // En la misma petición, sin cola: en el hosting no hay un `queue:work` corriendo y
+        // el reporte se quedaba "pendiente" para siempre. Un reporte tarda 1–2 segundos.
+        GenerateReportJob::dispatchSync($report->id);
 
         return response()->json(['data' => ['id' => $report->id]], 202);
     }

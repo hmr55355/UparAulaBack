@@ -13,13 +13,14 @@ class Institution extends Model
 
     protected $fillable = [
         'name', 'city', 'department', 'nit', 'rector', 'logo',
-        'grading_scale', 'min_passing_grade', 'created_by',
+        'grading_scale', 'min_passing_grade', 'teachers_manage_students', 'created_by',
     ];
 
     protected function casts(): array
     {
         return [
             'min_passing_grade' => 'decimal:1',
+            'teachers_manage_students' => 'boolean',
         ];
     }
 

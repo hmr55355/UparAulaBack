@@ -11,7 +11,7 @@ use App\Models\StudentGroup;
 use Illuminate\Support\Str;
 
 /**
- * Resumen general de copias (`/copies/summary`): tabla cruzada de todos los
+ * Resumen general de pagos (`/copy-charges/summary`; antes "de copias"): tabla cruzada de todos los
  * cobros del grupo/período — una columna por cobro, con color por estado de
  * pago de cada estudiante (mismos colores que PAYMENT_STATUS_BADGE en el
  * frontend), más Total debe/pagado/saldo. Solo Excel, per spec.
@@ -39,6 +39,7 @@ class CopiesSummaryReportService
         $periodId = $params['period_id'] ?? null;
 
         $charges = CopyCharge::where('group_id', $group->id)
+            ->where('registered_by', $report->user_id)
             ->when($periodId, fn ($q, $p) => $q->where('period_id', $p))
             ->orderBy('charge_date')
             ->get();
@@ -50,7 +51,7 @@ class CopiesSummaryReportService
             ->get()
             ->groupBy('student_id');
 
-        $headers = array_merge(['Estudiante'], $charges->map(fn (CopyCharge $c) => $c->description)->all(), ['Total debe', 'Total pagado', 'Saldo']);
+        $headers = array_merge(['Estudiante'], $charges->map(fn (CopyCharge $c) => (CopyCharge::CONCEPTS[$c->concept] ?? 'Otro').': '.$c->description)->all(), ['Total debe', 'Total pagado', 'Saldo']);
 
         $rows = [];
         $cellColors = [];
@@ -86,7 +87,7 @@ class CopiesSummaryReportService
             $cellColors[] = $colors;
         }
 
-        $title = "Resumen General de Copias — {$group->name}";
+        $title = "Resumen general de pagos — {$group->name}";
         $metaLines = ["Institución: {$group->institution->name}"];
 
         $relativePath = "reports/{$group->institution_id}/{$report->user_id}/".Str::uuid().'.xlsx';

@@ -112,7 +112,7 @@ class GradeExcelController extends Controller
         }
 
         $groupSubject->loadMissing(['group:id,name', 'subject:id,name']);
-        $filename = "notas-{$groupSubject->group->name}-{$groupSubject->subject->name}-{$period->name}.xlsx";
+        $filename = "planilla-sin-notas-{$groupSubject->group->name}-{$groupSubject->subject->name}-{$period->name}.xlsx";
 
         return response()->streamDownload(function () use ($spreadsheet) {
             (new Xlsx($spreadsheet))->save('php://output');

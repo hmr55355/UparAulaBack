@@ -11,8 +11,26 @@ class CopyCharge extends Model
 {
     use HasFactory;
 
+    /**
+     * Conceptos de cobro. No incluye lo que la gratuidad prohíbe cobrar en colegios
+     * oficiales (matrícula, carné, certificados, boletines: Decreto 4807 de 2011).
+     */
+    public const CONCEPTS = [
+        'copias' => 'Copias',
+        'materiales' => 'Materiales',
+        'colaboracion' => 'Colaboración',
+        'guia' => 'Guía o módulo',
+        'salida_pedagogica' => 'Salida pedagógica',
+        'actividad' => 'Actividad o celebración',
+        'fondo_curso' => 'Fondo del curso',
+        'rifa' => 'Rifa o bingo',
+        'uniforme' => 'Camiseta o uniforme',
+        'grado' => 'Ceremonia de grado',
+        'otro' => 'Otro',
+    ];
+
     protected $fillable = [
-        'group_id', 'period_id', 'registered_by', 'description',
+        'group_id', 'period_id', 'registered_by', 'concept', 'description',
         'quantity', 'unit_price', 'total_amount', 'charge_date', 'notes',
     ];
 

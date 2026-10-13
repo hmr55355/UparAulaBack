@@ -9,6 +9,7 @@ use App\Models\GroupSubject;
 use App\Models\ParentCitation;
 use App\Models\Period;
 use App\Models\PeriodFinal;
+use App\Models\ResourceLoan;
 use App\Models\Student;
 use App\Models\StudentCopyPayment;
 use App\Models\StudentObservation;
@@ -61,7 +62,9 @@ class StudentController extends Controller
             ->orderByDesc('scheduled_date')
             ->get();
 
+        // Solo los cobros que registró quien consulta (cada docente lleva los suyos).
         $copyPayments = StudentCopyPayment::where('student_id', $student->id)
+            ->whereHas('copyCharge', fn ($q) => $q->where('registered_by', $request->user()->id))
             ->with('copyCharge')
             ->get()
             ->sortByDesc(fn (StudentCopyPayment $p) => $p->copyCharge->charge_date)
@@ -77,6 +80,10 @@ class StudentController extends Controller
             'parents' => $student->parents()->get(),
             'citations' => $citations,
             'copy_payments' => $copyPayments,
+            // Recursos prestados al estudiante (los ve cualquiera que pueda ver su perfil).
+            'loans' => ResourceLoan::where('student_id', $student->id)
+                ->with('lender:id,name')
+                ->orderByRaw("status = 'prestado' desc")->orderByDesc('loan_date')->get(),
         ]);
     }
 

@@ -100,6 +100,10 @@ class GradeColumnController extends Controller
             'columns.*.sort_order' => ['required', 'integer', 'min:0'],
         ]);
 
+        // Solo se reordena la planilla propia (antes cualquier usuario podía mover la de otro).
+        $columns = GradeColumn::with('gradeSection.groupSubject')->findMany(array_column($validated['columns'], 'id'));
+        $columns->each(fn (GradeColumn $column) => $this->authorize('update', $column->gradeSection->groupSubject));
+
         foreach ($validated['columns'] as $item) {
             GradeColumn::where('id', $item['id'])->update(['sort_order' => $item['sort_order']]);
         }

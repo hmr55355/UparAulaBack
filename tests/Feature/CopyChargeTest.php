@@ -226,4 +226,41 @@ class CopyChargeTest extends TestCase
             ->assertJsonPath('data.0.paid_count', 0);
     }
 
+
+    public function test_a_charge_has_a_concept_and_old_ones_default_to_copies(): void
+    {
+        $base = ['group_id' => $this->group->id, 'quantity' => 1, 'unit_price' => 5000, 'charge_date' => '2026-02-01'];
+
+        $this->actingAs($this->teacher, 'sanctum')->postJson('/api/copy-charges', [...$base, 'description' => 'Guía 1'])
+            ->assertCreated()->assertJsonPath('data.concept', 'copias');
+
+        $id = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/copy-charges', [
+            ...$base, 'concept' => 'salida_pedagogica', 'description' => 'Visita al museo',
+        ])->assertCreated()->assertJsonPath('data.concept', 'salida_pedagogica')->json('data.id');
+
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/copy-charges/{$id}", ['concept' => 'actividad'])
+            ->assertOk()->assertJsonPath('data.concept', 'actividad');
+
+        $this->actingAs($this->teacher, 'sanctum')->postJson('/api/copy-charges', [...$base, 'concept' => 'matricula', 'description' => 'X'])
+            ->assertStatus(422);
+    }
+
+
+    public function test_a_charge_is_only_visible_and_editable_by_the_teacher_who_registered_it(): void
+    {
+        $other = User::factory()->create();
+        InstitutionTeacher::create([
+            'institution_id' => $this->institution->id, 'user_id' => $other->id, 'role' => 'teacher', 'status' => 'active',
+        ]);
+
+        $chargeId = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/copy-charges', [
+            'group_id' => $this->group->id, 'description' => 'Guía', 'quantity' => 1, 'unit_price' => 500, 'charge_date' => '2026-03-01',
+        ])->json('data.id');
+
+        $this->actingAs($this->teacher, 'sanctum')->getJson("/api/copy-charges?groupId={$this->group->id}")->assertJsonCount(1, 'data');
+        $this->actingAs($other, 'sanctum')->getJson("/api/copy-charges?groupId={$this->group->id}")->assertJsonCount(0, 'data');
+        $this->actingAs($other, 'sanctum')->getJson("/api/copy-charges/{$chargeId}/payments")->assertForbidden();
+        $this->actingAs($other, 'sanctum')->putJson("/api/copy-charges/{$chargeId}", ['description' => 'X'])->assertForbidden();
+        $this->actingAs($other, 'sanctum')->deleteJson("/api/copy-charges/{$chargeId}?confirm=1")->assertForbidden();
+    }
 }

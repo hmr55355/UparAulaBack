@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\GradeSectionController;
 use App\Http\Controllers\Api\GradeTemplateController;
 use App\Http\Controllers\Api\GroupController;
+use App\Http\Controllers\Api\GroupDirectorController;
 use App\Http\Controllers\Api\GroupSubjectController;
 use App\Http\Controllers\Api\HomeworkController;
 use App\Http\Controllers\Api\InstitutionController;
@@ -27,9 +28,11 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ParentCitationController;
 use App\Http\Controllers\Api\ParentController;
 use App\Http\Controllers\Api\PerformanceLevelController;
+use App\Http\Controllers\Api\PreEnrollmentController;
 use App\Http\Controllers\Api\PeriodController;
 use App\Http\Controllers\Api\PushSubscriptionController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\ResourceLoanController;
 use App\Http\Controllers\Api\StudentController;
 use App\Http\Controllers\Api\StudentImportController;
 use App\Http\Controllers\Api\StudentManagementController;
@@ -100,11 +103,19 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::put('/periods/{period}', [PeriodController::class, 'update']);
     Route::patch('/periods/{period}/set-active', [PeriodController::class, 'setActive']);
 
+    Route::get('/groups/mine', [GroupController::class, 'mine']);
     Route::get('/groups', [GroupController::class, 'index']);
     Route::post('/groups', [GroupController::class, 'store']);
     Route::put('/groups/{group}', [GroupController::class, 'update']);
     Route::delete('/groups/{group}', [GroupController::class, 'destroy']);
     Route::get('/groups/{group}/students', [GroupController::class, 'students']);
+    Route::get('/groups/{group}/consolidated', [GroupDirectorController::class, 'consolidated']);
+    Route::get('/groups/{group}/consolidated/export', [GroupDirectorController::class, 'consolidatedExport']);
+    Route::get('/groups/{group}/bulletins', [GroupDirectorController::class, 'bulletins']);
+    Route::get('/groups/{group}/pre-enrollments', [PreEnrollmentController::class, 'index']);
+    Route::put('/groups/{group}/pre-enrollments', [PreEnrollmentController::class, 'save']);
+    Route::get('/groups/{group}/pre-enrollments/export', [PreEnrollmentController::class, 'export']);
+    Route::get('/grades/export', [GroupDirectorController::class, 'gradeSheet']);
 
     Route::get('/subjects', [SubjectController::class, 'index']);
     Route::post('/subjects', [SubjectController::class, 'store']);
@@ -251,6 +262,16 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::get('/participations', [ParticipationController::class, 'index']);
     Route::post('/participations', [ParticipationController::class, 'store']);
     Route::delete('/participations/{participation}', [ParticipationController::class, 'destroy']);
+
+    // Préstamo de recursos (libros, materiales, equipos) a estudiantes y docentes.
+    Route::get('/resource-loans/alerts', [ResourceLoanController::class, 'alerts']);
+    Route::get('/resource-loans/teachers', [ResourceLoanController::class, 'teachers']);
+    Route::get('/resource-loans', [ResourceLoanController::class, 'index']);
+    Route::post('/resource-loans', [ResourceLoanController::class, 'store']);
+    Route::put('/resource-loans/{resourceLoan}', [ResourceLoanController::class, 'update']);
+    Route::post('/resource-loans/{resourceLoan}/return', [ResourceLoanController::class, 'markReturned']);
+    Route::post('/resource-loans/{resourceLoan}/reopen', [ResourceLoanController::class, 'reopen']);
+    Route::delete('/resource-loans/{resourceLoan}', [ResourceLoanController::class, 'destroy']);
 
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead']);

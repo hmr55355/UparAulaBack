@@ -12,7 +12,7 @@ class Group extends Model
     use HasFactory;
 
     protected $fillable = [
-        'institution_id', 'academic_year_id', 'grade_level_id', 'shift_id', 'name', 'grade_level', 'section', 'student_count',
+        'institution_id', 'academic_year_id', 'grade_level_id', 'shift_id', 'director_id', 'name', 'grade_level', 'section', 'student_count',
     ];
 
     public function institution(): BelongsTo
@@ -38,6 +38,40 @@ class Group extends Model
     public function shift(): BelongsTo
     {
         return $this->belongsTo(Shift::class);
+    }
+
+    /** Director de grupo (docente a cargo del curso). */
+    public function director(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'director_id');
+    }
+
+    public function isDirectedBy(User $user): bool
+    {
+        return $this->director_id !== null && (int) $this->director_id === (int) $user->id;
+    }
+
+    /** Ver todo el grupo (consolidado, boletines, prematrícula): admin o su director. */
+    public function canBeOverseenBy(User $user): bool
+    {
+        return $user->isAdminOf($this->institution_id) || $this->isDirectedBy($user);
+    }
+
+    /**
+     * Matricular, retirar y trasladar: siempre el admin; los docentes (director del
+     * grupo o quien dicta en él) solo si la institución lo habilitó.
+     */
+    public function studentsCanBeManagedBy(User $user): bool
+    {
+        if ($user->isAdminOf($this->institution_id)) {
+            return true;
+        }
+        if (! $this->institution->teachers_manage_students) {
+            return false;
+        }
+
+        return $this->isDirectedBy($user)
+            || $this->groupSubjects()->where('user_id', $user->id)->where('is_active', true)->exists();
     }
 
     public function groupSubjects(): HasMany
