@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Group;
+use App\Models\ParentGuardian;
 use App\Models\Student;
 use App\Models\StudentGroup;
 use Illuminate\Http\Request;
@@ -73,6 +74,52 @@ class StudentManagementController extends Controller
         $student->update($validated);
 
         return response()->json(['data' => $student->fresh()]);
+    }
+
+    /**
+     * Eliminar del todo, para registros hechos por error (duplicado, mal digitado).
+     * Borra al estudiante con sus matrículas y acudientes sin otros estudiantes. Si ya
+     * tiene notas, asistencia u otros registros, se avisa qué se perdería y solo un
+     * administrador puede confirmarlo: para los demás casos existe "Retirar".
+     */
+    public function destroy(Request $request, Student $student)
+    {
+        // Como editar: admin, o docente habilitado con el estudiante activo en uno de sus grupos.
+        $this->authorizeStudent($request, $student);
+
+        $records = $this->recordsOf($student);
+        if ($records !== []) {
+            $detail = collect($records)->map(fn ($count, $label) => "{$label}: {$count}")->implode(', ');
+
+            abort_unless(
+                $request->user()->isAdminOf($student->institution_id),
+                422,
+                "Este estudiante ya tiene registros ({$detail}). Solo un administrador puede eliminarlo; si se fue del colegio, usa \"Retirar\"."
+            );
+
+            if (! $request->boolean('confirm')) {
+                return response()->json([
+                    'message' => "Este estudiante ya tiene registros ({$detail}). Al eliminarlo se borra todo y no se puede deshacer.",
+                    'records' => $records,
+                    'requires_confirmation' => true,
+                ], 409);
+            }
+        }
+
+        DB::transaction(function () use ($student) {
+            $groupIds = $student->studentGroups()->pluck('group_id');
+            $parentIds = $student->parents()->pluck('parents.id');
+
+            // Borrado real (el modelo usa SoftDeletes): las tablas hijas caen en cascada
+            // y el número de documento queda libre para volver a registrarlo bien.
+            $student->forceDelete();
+
+            ParentGuardian::whereIn('id', $parentIds)->whereDoesntHave('students')->delete();
+            // La cascada de la base no dispara StudentGroupObserver.
+            Group::findMany($groupIds)->each->refreshStudentCount();
+        });
+
+        return response()->json(['message' => 'Estudiante eliminado.']);
     }
 
     public function withdraw(Request $request, Student $student)
@@ -204,6 +251,30 @@ class StudentManagementController extends Controller
             || $student->studentGroups()->where('status', 'activo')->with('group.institution')->get()
                 ->contains(fn (StudentGroup $e) => $e->group?->studentsCanBeManagedBy($user));
         abort_unless($allowed, 403, 'No tienes permiso para editar a este estudiante.');
+    }
+
+    /**
+     * Lo que se perdería al eliminarlo, con su etiqueta. No cuenta lo que el sistema
+     * crea solo (matrículas, cobros en "debe", definitivas calculadas).
+     *
+     * @return array<string, int>
+     */
+    private function recordsOf(Student $student): array
+    {
+        $id = $student->id;
+
+        return array_filter([
+            'notas' => DB::table('grades')->where('student_id', $id)
+                ->where(fn ($q) => $q->whereNotNull('score')->orWhereNotNull('convention_id'))->count(),
+            'registros de asistencia' => DB::table('attendance_records')->where('student_id', $id)->count(),
+            'participaciones' => DB::table('participations')->where('student_id', $id)->count(),
+            'entregas de tareas' => DB::table('homework_deliveries')->where('student_id', $id)->count(),
+            'anotaciones de comportamiento' => DB::table('behavior_annotations')->where('student_id', $id)->count(),
+            'observaciones' => DB::table('student_observations')->where('student_id', $id)->count(),
+            'citaciones' => DB::table('parent_citations')->where('student_id', $id)->count(),
+            'pagos registrados' => DB::table('student_copy_payments')->where('student_id', $id)->where('status', '!=', 'debe')->count(),
+            'préstamos' => DB::table('resource_loans')->where('student_id', $id)->count(),
+        ]);
     }
 
     private function activeEnrollment(Student $student, int $groupId): StudentGroup

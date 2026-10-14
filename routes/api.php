@@ -211,6 +211,7 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::get('/groups/{group}/enrollments', [StudentManagementController::class, 'enrollments']);
     Route::post('/students', [StudentManagementController::class, 'store']);
     Route::put('/students/{student}', [StudentManagementController::class, 'update']);
+    Route::delete('/students/{student}', [StudentManagementController::class, 'destroy']);
     Route::post('/students/{student}/withdraw', [StudentManagementController::class, 'withdraw']);
     Route::post('/students/{student}/transfer', [StudentManagementController::class, 'transfer']);
     Route::post('/students/{student}/enroll', [StudentManagementController::class, 'enroll']);

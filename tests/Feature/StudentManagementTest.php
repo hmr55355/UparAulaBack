@@ -6,6 +6,7 @@ use App\Models\AcademicYear;
 use App\Models\Group;
 use App\Models\InstitutionTeacher;
 use App\Models\Student;
+use App\Models\StudentGroup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -117,5 +118,37 @@ class StudentManagementTest extends TestCase
 
         $this->actingAs($this->admin, 'sanctum')->putJson("/api/academic-years/{$second}", ['end_date' => '2027-12-01'])->assertOk();
         $this->actingAs($this->admin, 'sanctum')->putJson("/api/academic-years/{$second}", ['end_date' => '2026-01-01'])->assertStatus(422);
+    }
+
+    public function test_a_mistaken_student_is_deleted_and_one_with_records_asks_an_admin_to_confirm(): void
+    {
+        // Sin registros: se elimina de una, libera el documento y actualiza el contador.
+        $id = $this->createStudent();
+        $this->assertEquals(1, $this->a->fresh()->student_count);
+        $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/students/{$id}")->assertOk();
+        $this->assertEquals(0, Student::withTrashed()->count());
+        $this->assertEquals(0, StudentGroup::count());
+        $this->assertEquals(0, $this->a->fresh()->student_count);
+        $id = $this->createStudent();
+
+        // Con registros: pide confirmación y dice qué se pierde.
+        \Illuminate\Support\Facades\DB::table('resource_loans')->insert([
+            'institution_id' => $this->institutionId, 'registered_by' => $this->admin->id, 'student_id' => $id,
+            'category' => 'libro', 'item_name' => 'Baldor', 'quantity' => 1,
+            'loan_date' => '2026-03-01', 'due_date' => '2026-03-08', 'status' => 'prestado',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/students/{$id}")
+            ->assertStatus(409)->assertJsonPath('requires_confirmation', true)->assertJsonPath('records.préstamos', 1);
+        $this->assertEquals(1, Student::count());
+
+        // Un docente habilitado no puede eliminar a uno con registros.
+        $teacher = User::factory()->create();
+        InstitutionTeacher::create(['institution_id' => $this->institutionId, 'user_id' => $teacher->id, 'role' => 'teacher', 'status' => 'active']);
+        $this->actingAs($teacher, 'sanctum')->deleteJson("/api/students/{$id}?confirm=1")->assertForbidden();
+
+        $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/students/{$id}?confirm=1")->assertOk();
+        $this->assertEquals(0, Student::withTrashed()->count());
+        $this->assertEquals(0, \Illuminate\Support\Facades\DB::table('resource_loans')->count());
     }
 }
