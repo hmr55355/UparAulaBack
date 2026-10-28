@@ -12,7 +12,7 @@ antes de tocar el motor de notas, la asistencia o los monitores.
 
 ```bash
 php artisan serve                 # API en http://localhost:8000
-php artisan test                  # 156 pruebas (SQLite en memoria, no toca MySQL)
+php artisan test                  # 162 pruebas (SQLite en memoria, no toca MySQL)
 php artisan migrate               # nunca migrate:fresh sin permiso explícito
 php artisan queue:work            # solo para Web Push; los reportes ya no usan la cola
 ```
@@ -44,6 +44,10 @@ pídele al usuario que la inicie en vez de adivinar comandos.
 - **Estructura académica**: `grade_levels` (grados), `shifts` (jornadas),
   `class_blocks` (bloques y descansos por jornada). Los grupos apuntan a un grado
   y una jornada; las materias se vinculan a grados (`grade_level_subject`).
+- **Grupos de trabajo** (`work_groups`, `work_group_members`, por actividad manual):
+  `PUT /grade-columns/{id}/work-groups` guarda todos juntos. La nota del grupo se
+  copia a `grades` de cada integrante; solo se reescribe a todos si cambió, si no,
+  solo a los nuevos (se respeta la nota cambiada a mano). El motor no sabe de grupos.
 - **Monitores**: `course_monitors`, `monitor_submissions` (propuesta pendiente) y
   `participations`. Nada del monitor toca los datos reales hasta que el docente
   aprueba, y eso pasa por `MonitorReviewService`.

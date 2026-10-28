@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\StudentManagementController;
 use App\Http\Controllers\Api\StudentObservationController;
 use App\Http\Controllers\Api\SubjectController;
 use App\Http\Controllers\Api\VoiceNoteController;
+use App\Http\Controllers\Api\WorkGroupController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health-check', fn () => response()->json(['status' => 'ok']));
@@ -138,6 +139,8 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::post('/grade-columns', [GradeColumnController::class, 'store']);
     Route::put('/grade-columns/{gradeColumn}', [GradeColumnController::class, 'update']);
     Route::delete('/grade-columns/{gradeColumn}', [GradeColumnController::class, 'destroy']);
+    Route::get('/grade-columns/{gradeColumn}/work-groups', [WorkGroupController::class, 'index']);
+    Route::put('/grade-columns/{gradeColumn}/work-groups', [WorkGroupController::class, 'sync']);
 
     Route::get('/grade-templates', [GradeTemplateController::class, 'index']);
     Route::post('/grade-templates', [GradeTemplateController::class, 'store']);

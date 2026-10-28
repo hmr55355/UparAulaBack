@@ -15,6 +15,7 @@ use App\Models\PeriodFinal;
 use App\Models\SectionFinal;
 use App\Models\Student;
 use App\Models\StudentGroup;
+use App\Models\WorkGroup;
 use App\Services\GradeCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -63,12 +64,19 @@ class GradeController extends Controller
             ->get()
             ->keyBy('student_id');
 
+        // Grupos de trabajo por actividad: { columnId: [{ id, name, score, convention_id, student_ids }] }.
+        $workGroups = WorkGroup::with('members:students.id')->whereIn('grade_column_id', $columnIds)
+            ->orderBy('sort_order')->orderBy('id')->get()
+            ->groupBy('grade_column_id')
+            ->map(fn ($groups) => $groups->map->toSheetArray()->values());
+
         return response()->json([
             'students' => $students,
             'sections' => $sections,
             'grades' => $grades,
             'section_finals' => $sectionFinals,
             'period_finals' => $periodFinals,
+            'work_groups' => $workGroups,
             'min_passing_grade' => (float) $groupSubject->institution->min_passing_grade,
             // Convenciones del docente del curso (no de quien abre la planilla).
             'conventions' => GradeConvention::where('user_id', $groupSubject->user_id)
