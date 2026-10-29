@@ -63,7 +63,7 @@ class WorkGroupController extends Controller
             abort_if(
                 $set->group_subject_id !== $gradeColumn->group_subject_id || $set->period_id !== $gradeColumn->period_id,
                 422,
-                'Ese conjunto de grupos es de otro curso o período.'
+                'Ese grupo de trabajo es de otro curso o período.'
             );
         }
 
@@ -87,10 +87,10 @@ class WorkGroupController extends Controller
 
         $seen = [];
         foreach ($validated['groups'] as $i => $group) {
-            abort_if(isset($group['id']) && ! $existing->has($group['id']), 422, 'Uno de los grupos no es de este conjunto.');
+            abort_if(isset($group['id']) && ! $existing->has($group['id']), 422, 'Uno de los equipos no es de este grupo.');
             foreach ($group['student_ids'] as $studentId) {
                 abort_if(! in_array($studentId, $enrolled, true), 422, 'Uno de los estudiantes no está matriculado en este grupo.');
-                abort_if(isset($seen[$studentId]), 422, 'Un estudiante no puede estar en dos grupos del mismo conjunto.');
+                abort_if(isset($seen[$studentId]), 422, 'Un estudiante no puede estar en dos equipos del mismo grupo.');
                 $seen[$studentId] = true;
             }
             if (! empty($group['convention_id'])) {
@@ -108,7 +108,7 @@ class WorkGroupController extends Controller
                 $set = WorkGroupSet::create([
                     'group_subject_id' => $gradeColumn->group_subject_id,
                     'period_id' => $gradeColumn->period_id,
-                    'name' => trim($validated['set_name'] ?? '') ?: mb_substr('Grupos de '.$gradeColumn->name, 0, 80),
+                    'name' => trim($validated['set_name'] ?? '') ?: $this->nextSetName($gradeColumn),
                 ]);
             } elseif (trim($validated['set_name'] ?? '') !== '') {
                 $set->update(['name' => trim($validated['set_name'])]);
@@ -248,6 +248,19 @@ class WorkGroupController extends Controller
                 ];
             })->values(),
         ])->all();
+    }
+
+    /** "Grupo N": el siguiente número libre entre las agrupaciones del curso en el período. */
+    private function nextSetName(GradeColumn $column): string
+    {
+        $used = WorkGroupSet::where('group_subject_id', $column->group_subject_id)->where('period_id', $column->period_id)
+            ->pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all();
+        $n = count($used) + 1;
+        while (in_array("grupo {$n}", $used, true)) {
+            $n++;
+        }
+
+        return "Grupo {$n}";
     }
 
     private function differentScore($old, $new): bool

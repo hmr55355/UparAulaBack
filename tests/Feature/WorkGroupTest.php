@@ -239,5 +239,13 @@ class WorkGroupTest extends TestCase
         $this->assertDatabaseHas('work_group_sets', ['id' => $setId]);
         $this->sync([])->assertOk();
         $this->assertDatabaseMissing('work_group_sets', ['id' => $setId]);
+
+        // Sin nombre, las agrupaciones nuevas se numeran: Grupo 1, Grupo 2…
+        $first = $this->sync([['name' => 'Equipo 1', 'student_ids' => [$ana->id]]])->json('data.0.set_id');
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/grade-columns/{$phase2->id}/work-groups", [
+            'set_id' => null, 'groups' => [['name' => 'Equipo 1', 'student_ids' => [$beto->id]]],
+        ])->assertOk();
+        $this->assertSame(['Grupo 1', 'Grupo 2'], \App\Models\WorkGroupSet::orderBy('id')->pluck('name')->all());
+        $this->assertNotNull($first);
     }
 }
