@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Grade;
 use App\Models\GradeColumn;
 use App\Models\GradeSection;
+use App\Models\GroupSubject;
 use App\Models\Homework;
 use App\Services\GradeCalculatorService;
 use App\Services\PerformanceScale;
@@ -30,6 +31,41 @@ class GradeColumnController extends Controller
      * Configurar planilla). Con weight_mode=automatic la sección queda repartida
      * por igual; en ambos casos se recalculan las definitivas del curso.
      */
+    /**
+     * Para "agregar también en los otros cursos del grado": mis cursos de la misma
+     * materia en los demás grupos del grado, con la sección del mismo nombre en el
+     * mismo período (null si ese curso no la tiene o el período está cerrado).
+     */
+    public function siblings(Request $request)
+    {
+        $request->validate(['sectionId' => ['required', 'integer', 'exists:grade_sections,id']]);
+        $section = GradeSection::with('groupSubject.group', 'period')->findOrFail($request->sectionId);
+        $this->authorize('view', $section->groupSubject);
+        $course = $section->groupSubject;
+
+        $courses = GroupSubject::where('user_id', $request->user()->id)
+            ->where('subject_id', $course->subject_id)
+            ->where('is_active', true)
+            ->whereHas('group', fn ($q) => $q->sameGradeAs($course->group))
+            ->with('group:id,name')
+            ->get()
+            ->sortBy(fn (GroupSubject $gs) => $gs->group->name)
+            ->values();
+
+        $name = mb_strtolower(trim($section->name));
+        $sections = GradeSection::whereIn('group_subject_id', $courses->pluck('id'))
+            ->where('period_id', $section->period_id)
+            ->get()
+            ->filter(fn (GradeSection $s) => mb_strtolower(trim($s->name)) === $name)
+            ->keyBy('group_subject_id');
+
+        return response()->json(['data' => $courses->map(fn (GroupSubject $gs) => [
+            'group_subject_id' => $gs->id,
+            'group_name' => $gs->group->name,
+            'section_id' => $section->period->is_closed ? null : $sections->get($gs->id)?->id,
+        ])]);
+    }
+
     public function store(Request $request, GradeCalculatorService $calculator)
     {
         $automatic = $request->input('weight_mode') === 'automatic';

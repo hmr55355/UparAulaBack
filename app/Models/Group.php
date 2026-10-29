@@ -95,4 +95,17 @@ class Group extends Model
 
         $this->forceFill(['student_count' => $count])->saveQuietly();
     }
+
+    /**
+     * Los otros grupos del mismo grado y año (p. ej. 1102 y 1103 para 1101): por
+     * `grade_level_id`, o por el texto `grade_level` en grupos viejos sin grado.
+     */
+    public function scopeSameGradeAs($query, Group $group)
+    {
+        return $query->where('academic_year_id', $group->academic_year_id)
+            ->where('id', '!=', $group->id)
+            ->where(fn ($q) => $group->grade_level_id
+                ? $q->where('grade_level_id', $group->grade_level_id)
+                : $q->whereNull('grade_level_id')->where('grade_level', $group->grade_level));
+    }
 }

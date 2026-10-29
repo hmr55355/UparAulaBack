@@ -49,6 +49,23 @@ class CopyChargeController extends Controller
         return response()->json(['data' => $charges]);
     }
 
+    /** Para "crear también en los otros cursos del grado": los grupos del mismo grado donde dicto o que dirijo. */
+    public function siblingGroups(Request $request)
+    {
+        $request->validate(['groupId' => ['required', 'integer', 'exists:groups,id']]);
+        $group = Group::findOrFail($request->groupId);
+        $this->authorize('view', $group->institution);
+        $userId = $request->user()->id;
+
+        $groups = Group::sameGradeAs($group)
+            ->where(fn ($q) => $q->where('director_id', $userId)
+                ->orWhereHas('groupSubjects', fn ($gs) => $gs->where('user_id', $userId)->where('is_active', true)))
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json(['data' => $groups]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([

@@ -135,6 +135,7 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::delete('/grade-sections/{gradeSection}', [GradeSectionController::class, 'destroy']);
 
     Route::patch('/grade-columns/reorder', [GradeColumnController::class, 'reorder']);
+    Route::get('/grade-columns/siblings', [GradeColumnController::class, 'siblings']);
     Route::get('/grade-columns', [GradeColumnController::class, 'index']);
     Route::post('/grade-columns', [GradeColumnController::class, 'store']);
     Route::put('/grade-columns/{gradeColumn}', [GradeColumnController::class, 'update']);
@@ -238,6 +239,7 @@ Route::middleware(['auth:sanctum', 'not.monitor'])->group(function () {
     Route::get('/voice-notes/{voiceNote}', [VoiceNoteController::class, 'show']);
     Route::delete('/voice-notes/{voiceNote}', [VoiceNoteController::class, 'destroy']);
 
+    Route::get('/copy-charges/sibling-groups', [CopyChargeController::class, 'siblingGroups']);
     Route::get('/copy-charges', [CopyChargeController::class, 'index']);
     Route::post('/copy-charges', [CopyChargeController::class, 'store']);
     Route::patch('/copy-charges/payments/{payment}', [CopyChargeController::class, 'updatePaymentSingle']);
