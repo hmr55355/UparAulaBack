@@ -15,7 +15,7 @@ use App\Models\PeriodFinal;
 use App\Models\SectionFinal;
 use App\Models\Student;
 use App\Models\StudentGroup;
-use App\Models\WorkGroup;
+use App\Models\WorkGroupSet;
 use App\Services\GradeCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -64,11 +64,18 @@ class GradeController extends Controller
             ->get()
             ->keyBy('student_id');
 
-        // Grupos de trabajo por actividad: { columnId: [{ id, name, score, convention_id, student_ids }] }.
-        $workGroups = WorkGroup::with('members:students.id')->whereIn('grade_column_id', $columnIds)
-            ->orderBy('sort_order')->orderBy('id')->get()
-            ->groupBy('grade_column_id')
-            ->map(fn ($groups) => $groups->map->toSheetArray()->values());
+        // Grupos de trabajo por actividad, con la nota de cada grupo en ella, y los conjuntos del
+        // curso en el período (para elegir uno al crear una actividad o reutilizarlo).
+        $columns = $sections->flatMap->columns;
+        $workGroups = WorkGroupController::groupsForColumns($columns);
+        $workGroupSets = WorkGroupSet::where('group_subject_id', $groupSubject->id)->where('period_id', $request->periodId)
+            ->withCount('groups')->orderBy('id')->get()
+            ->map(fn (WorkGroupSet $set) => [
+                'id' => $set->id,
+                'name' => $set->name,
+                'groups_count' => $set->groups_count,
+                'column_ids' => $columns->where('work_group_set_id', $set->id)->pluck('id')->values(),
+            ]);
 
         return response()->json([
             'students' => $students,
@@ -76,7 +83,8 @@ class GradeController extends Controller
             'grades' => $grades,
             'section_finals' => $sectionFinals,
             'period_finals' => $periodFinals,
-            'work_groups' => $workGroups,
+            'work_groups' => (object) $workGroups,
+            'work_group_sets' => $workGroupSets,
             'min_passing_grade' => (float) $groupSubject->institution->min_passing_grade,
             // Convenciones del docente del curso (no de quien abre la planilla).
             'conventions' => GradeConvention::where('user_id', $groupSubject->user_id)

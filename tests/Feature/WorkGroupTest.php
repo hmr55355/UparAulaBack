@@ -185,4 +185,59 @@ class WorkGroupTest extends TestCase
             ->putJson("/api/grade-columns/{$this->column->id}/work-groups", ['groups' => []])
             ->assertForbidden();
     }
+
+    private function phase(string $name, ?int $setId = null): GradeColumn
+    {
+        $id = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/grade-columns', [
+            'grade_section_id' => $this->column->grade_section_id, 'column_type' => 'manual', 'name' => $name,
+            'weight_mode' => 'automatic', 'work_group_set_id' => $setId,
+        ])->assertCreated()->json('data.id');
+
+        return GradeColumn::findOrFail($id);
+    }
+
+    public function test_several_activities_share_the_same_groups_with_their_own_grade(): void
+    {
+        [$ana, $beto, $carla, $dario] = $this->students;
+        $groups = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/grade-columns/{$this->column->id}/work-groups", [
+            'set_id' => null,
+            'set_name' => 'Proyecto feria',
+            'groups' => [
+                ['name' => 'Grupo 1', 'student_ids' => [$ana->id, $beto->id], 'score' => 8.0],
+                ['name' => 'Los cracks', 'student_ids' => [$carla->id], 'score' => 6.0],
+            ],
+        ])->assertOk()->json('data');
+        $setId = $groups[0]['set_id'];
+
+        // Fase 2: nace con los mismos grupos y sin notas.
+        $phase2 = $this->phase('Fase 2', $setId);
+        $this->assertSame($setId, $phase2->work_group_set_id);
+        $this->actingAs($this->teacher, 'sanctum')
+            ->getJson("/api/grades?groupSubjectId={$this->groupSubject->id}&periodId={$this->period->id}")
+            ->assertOk()
+            ->assertJsonPath("work_groups.{$phase2->id}.1.name", 'Los cracks')
+            ->assertJsonPath("work_groups.{$phase2->id}.1.score", null)
+            ->assertJsonPath('work_group_sets.0.name', 'Proyecto feria')
+            ->assertJsonPath('work_group_sets.0.column_ids', [$this->column->id, $phase2->id]);
+
+        // Nota de la fase 2 por grupo: no toca la de la fase 1.
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/grade-columns/{$phase2->id}/work-groups", [
+            'set_id' => $setId,
+            'groups' => [
+                ['id' => $groups[0]['id'], 'name' => 'Grupo 1', 'student_ids' => [$ana->id, $beto->id], 'score' => 9.5],
+                ['id' => $groups[1]['id'], 'name' => 'Los cracks', 'student_ids' => [$carla->id, $dario->id], 'score' => 7.0],
+            ],
+        ])->assertOk()->assertJsonPath('grades_updated', 4);
+        $this->assertSame(8.0, $this->scoreOf($ana));
+        $this->assertSame(9.5, (float) Grade::where('student_id', $ana->id)->where('grade_column_id', $phase2->id)->value('score'));
+        // Darío entró a "Los cracks" desde la fase 2: también recibe la nota que el grupo tenía en la fase 1.
+        $this->assertSame(6.0, $this->scoreOf($dario));
+
+        // Quitar los grupos de una actividad no borra el conjunto si otra lo usa.
+        $this->actingAs($this->teacher, 'sanctum')->putJson("/api/grade-columns/{$phase2->id}/work-groups", ['groups' => []])->assertOk();
+        $this->assertNull($phase2->fresh()->work_group_set_id);
+        $this->assertDatabaseHas('work_group_sets', ['id' => $setId]);
+        $this->sync([])->assertOk();
+        $this->assertDatabaseMissing('work_group_sets', ['id' => $setId]);
+    }
 }

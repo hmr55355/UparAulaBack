@@ -12,7 +12,7 @@ antes de tocar el motor de notas, la asistencia o los monitores.
 
 ```bash
 php artisan serve                 # API en http://localhost:8000
-php artisan test                  # 163 pruebas (SQLite en memoria, no toca MySQL)
+php artisan test                  # 164 pruebas (SQLite en memoria, no toca MySQL)
 php artisan migrate               # nunca migrate:fresh sin permiso explícito
 php artisan queue:work            # solo para Web Push; los reportes ya no usan la cola
 ```

@@ -5,23 +5,20 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Grupo de trabajo de una actividad. Su nota se copia a la de cada integrante
- * (ver WorkGroupController); la planilla sigue leyendo solo `grades`.
+ * Grupo de trabajo dentro de un conjunto. Su nota en cada actividad está en
+ * `work_group_grades` y se copia a la de cada integrante (ver WorkGroupController);
+ * la planilla sigue leyendo solo `grades`.
  */
 class WorkGroup extends Model
 {
-    protected $fillable = ['grade_column_id', 'name', 'score', 'convention_id', 'sort_order'];
+    protected $fillable = ['work_group_set_id', 'name', 'sort_order'];
 
-    protected function casts(): array
+    public function set(): BelongsTo
     {
-        return ['score' => 'decimal:1'];
-    }
-
-    public function gradeColumn(): BelongsTo
-    {
-        return $this->belongsTo(GradeColumn::class);
+        return $this->belongsTo(WorkGroupSet::class, 'work_group_set_id');
     }
 
     public function members(): BelongsToMany
@@ -29,17 +26,8 @@ class WorkGroup extends Model
         return $this->belongsToMany(Student::class, 'work_group_members')->orderBy('last_name')->orderBy('first_name');
     }
 
-    /** Forma que usa el frontend: los integrantes como lista de ids. */
-    public function toSheetArray(): array
+    public function grades(): HasMany
     {
-        return [
-            'id' => $this->id,
-            'grade_column_id' => $this->grade_column_id,
-            'name' => $this->name,
-            'score' => $this->score,
-            'convention_id' => $this->convention_id,
-            'sort_order' => $this->sort_order,
-            'student_ids' => $this->members->pluck('id')->values(),
-        ];
+        return $this->hasMany(WorkGroupGrade::class);
     }
 }

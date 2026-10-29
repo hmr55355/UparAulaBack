@@ -14,7 +14,7 @@ class GradeColumn extends Model
     protected $fillable = [
         'grade_section_id', 'group_subject_id', 'period_id', 'column_type', 'name', 'short_name',
         'description', 'weight', 'max_score', 'date', 'attendance_base_score', 'absence_penalty',
-        'justified_absence_penalty', 'formula', 'is_visible', 'sort_order',
+        'justified_absence_penalty', 'formula', 'is_visible', 'sort_order', 'work_group_set_id',
     ];
 
     protected function casts(): array

@@ -7,6 +7,7 @@ use App\Models\Grade;
 use App\Models\GradeColumn;
 use App\Models\GradeSection;
 use App\Models\GroupSubject;
+use App\Models\WorkGroupSet;
 use App\Models\Homework;
 use App\Services\GradeCalculatorService;
 use App\Services\PerformanceScale;
@@ -70,7 +71,10 @@ class GradeColumnController extends Controller
     {
         $automatic = $request->input('weight_mode') === 'automatic';
         $validated = $this->validatePayload($request, weightRequired: ! $automatic);
-        $request->validate(['weight_mode' => ['sometimes', 'in:manual,automatic']]);
+        $request->validate([
+            'weight_mode' => ['sometimes', 'in:manual,automatic'],
+            'work_group_set_id' => ['nullable', 'integer', 'exists:work_group_sets,id'],
+        ]);
 
         $section = GradeSection::with('groupSubject.institution')->findOrFail($validated['grade_section_id']);
         $this->authorize('update', $section->groupSubject);
@@ -81,6 +85,13 @@ class GradeColumnController extends Controller
         $validated['sort_order'] = $section->columns()->count();
         $validated['weight'] = $automatic ? 0 : $validated['weight'];
         $validated['max_score'] ??= PerformanceScale::maxForInstitution($section->groupSubject->institution);
+
+        // Con grupos de trabajo de otra actividad (fases de un mismo proyecto): mismo curso y período.
+        if ($request->filled('work_group_set_id')) {
+            $set = WorkGroupSet::findOrFail($request->integer('work_group_set_id'));
+            abort_if($set->group_subject_id !== $section->group_subject_id || $set->period_id !== $section->period_id, 422, 'Ese conjunto de grupos es de otro curso o período.');
+            $validated['work_group_set_id'] = $set->id;
+        }
 
         $column = GradeColumn::create($validated);
 
